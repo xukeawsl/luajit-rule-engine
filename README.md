@@ -186,10 +186,6 @@ cmake .. -DCMAKE_PREFIX_PATH=/usr/local/3rd/ljre-1.0.0
 make -j$(nproc)
 ```
 
-### 示例项目
-
-参考 [examples/CMakeLists.txt](examples/CMakeLists.txt) 查看完整的集成示例。
-
 ## 使用方法
 
 ### 1. 定义规则
