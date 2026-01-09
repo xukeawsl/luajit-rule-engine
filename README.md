@@ -95,8 +95,8 @@ add_subdirectory(third-party/luajit-rule-engine)
 # 创建你的可执行程序
 add_executable(your_app main.cpp)
 
-# 链接 luajit-rule-engine
-target_link_libraries(your_app PRIVATE ljre)
+# 链接 luajit-rule-engine（推荐使用命名空间版本）
+target_link_libraries(your_app PRIVATE ljre::ljre)
 ```
 
 ### 方法2: 安装后使用（find_package）
@@ -114,10 +114,8 @@ find_package(ljre REQUIRED)
 # 创建你的可执行程序
 add_executable(your_app main.cpp)
 
-# 链接 luajit-rule-engine（两种方式都可以）
-target_link_libraries(your_app PRIVATE ljre)
-# 或者使用命名空间版本
-# target_link_libraries(your_app PRIVATE ljre::ljre)
+# 链接 luajit-rule-engine（统一使用命名空间版本）
+target_link_libraries(your_app PRIVATE ljre::ljre)
 ```
 
 ### 安装到系统
@@ -174,8 +172,8 @@ find_package(ljre REQUIRED)
 # 创建你的可执行程序
 add_executable(your_app main.cpp)
 
-# 链接 luajit-rule-engine
-target_link_libraries(your_app PRIVATE ljre)
+# 链接 luajit-rule-engine（推荐使用命名空间版本）
+target_link_libraries(your_app PRIVATE ljre::ljre)
 ```
 
 或者在命令行中指定:

@@ -5,4 +5,5 @@
 add_executable(example example.cpp)
 
 # 链接 ljre 库(从父项目继承)
-target_link_libraries(example PRIVATE ljre)
+# 统一使用 ljre::ljre，无论是通过 add_subdirectory 还是 find_package
+target_link_libraries(example PRIVATE ljre::ljre)

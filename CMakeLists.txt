@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(luajit-ruleengine VERSION 1.0.0 LANGUAGES C CXX)
+project(luajit-rule-engine VERSION 1.0.0 LANGUAGES C CXX)
 
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
@@ -31,9 +31,11 @@ target_include_directories(ljre PUBLIC
     $<BUILD_INTERFACE:${JSON_ROOT}>
 )
 
-# 链接 LuaJIT
-target_link_libraries(ljre PRIVATE
+target_link_libraries(ljre PUBLIC
     ${LUAJIT_ROOT}/lib/libluajit-5.1.a
+)
+
+target_link_libraries(ljre PRIVATE
     -lm -ldl
 )
 
@@ -47,7 +49,11 @@ install(TARGETS ljre
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+# 安装 ljre 头文件
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# 安装 nlohmann/json 头文件（ljre 依赖此库）
+install(FILES ${JSON_ROOT}/nlohmann/json.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann)
 
 # 导出目标
 install(EXPORT ljre_targets
