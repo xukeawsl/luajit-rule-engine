@@ -1,5 +1,5 @@
 #include "ljre/json_adapter.h"
-#include <stdexcept>
+
 
 namespace ljre {
 

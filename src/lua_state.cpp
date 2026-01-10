@@ -1,5 +1,6 @@
 #include "ljre/lua_state.h"
 
+
 namespace ljre {
 
 LuaState::LuaState() : _L(luaL_newstate()) {

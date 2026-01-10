@@ -1,7 +1,9 @@
 #pragma once
 
-#include <lua.hpp>
 #include <string>
+
+#include "lua.hpp"
+
 
 namespace ljre {
 

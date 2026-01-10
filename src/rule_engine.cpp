@@ -1,5 +1,6 @@
 #include "ljre/rule_engine.h"
 
+
 namespace ljre {
 
 RuleEngine::RuleEngine() {

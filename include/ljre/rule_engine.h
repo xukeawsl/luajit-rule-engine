@@ -1,11 +1,13 @@
 #pragma once
 
-#include "ljre/lua_state.h"
-#include "ljre/data_adapter.h"
 #include <string>
 #include <unordered_map>
 #include <memory>
 #include <vector>
+
+#include "ljre/lua_state.h"
+#include "ljre/data_adapter.h"
+
 
 namespace ljre {
 
