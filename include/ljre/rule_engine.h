@@ -55,12 +55,12 @@ public:
     // 检查指定规则是否匹配
     // data_adapter 用于将业务数据转换为Lua table
     bool match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
-                    MatchResult* result = nullptr, std::string* error_msg = nullptr);
+                    MatchResult& result, std::string* error_msg = nullptr);
 
     // 检查所有规则是否匹配
     // results 存储每个规则的匹配结果
     bool match_all_rules(const DataAdapter& data_adapter,
-                         std::vector<MatchResult>* results = nullptr,
+                         std::vector<MatchResult>& results,
                          std::string* error_msg = nullptr);
 
     // 获取所有规则信息
@@ -91,7 +91,7 @@ private:
     // 内部方法：调用规则匹配函数
     bool call_match_function(const std::string& rule_name,
                              const DataAdapter& data_adapter,
-                             MatchResult* result,
+                             MatchResult& result,
                              std::string* error_msg);
 };
 

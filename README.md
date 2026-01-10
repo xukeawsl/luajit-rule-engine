@@ -4,10 +4,12 @@
 
 ## 特性
 
-- **高性能**: 使用 LuaJIT JIT 编译器，执行效率高
+- **高性能**: 使用 LuaJIT JIT 编译器，执行效率高，支持动态开启/关闭 JIT
 - **动态更新**: 支持运行时重新加载规则，无需重启程序
 - **灵活适配**: 使用适配器模式，支持多种数据格式（JSON、Protobuf 等）
 - **简洁易用**: 提供 C++17 友好的 API 接口
+- **安全可靠**: 使用 RAII 栈守卫自动管理 Lua 栈平衡，避免内存泄漏
+- **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math），不开放 io/os/debug 等危险接口
 - **零依赖（除 LuaJIT）**: 只依赖 LuaJIT 和 nlohmann/json（header-only）
 
 ## 编码规范
@@ -258,14 +260,14 @@ int main() {
 
     // 匹配单个规则
     MatchResult result;
-    if (engine.match_rule("age_check", adapter, &result, &error_msg)) {
+    if (engine.match_rule("age_check", adapter, result)) {
         std::cout << "匹配结果: " << (result.matched ? "成功" : "失败")
                   << ", 信息: " << result.message << std::endl;
     }
 
     // 匹配所有规则
     std::vector<MatchResult> results;
-    if (engine.match_all_rules(adapter, &results, &error_msg)) {
+    if (engine.match_all_rules(adapter, results)) {
         std::cout << "所有规则匹配成功" << std::endl;
     } else {
         std::cout << "部分规则匹配失败" << std::endl;
@@ -323,6 +325,55 @@ private:
 
 ## API 参考
 
+### LuaState 类
+
+Lua 状态管理类，提供 RAII 方式的生命周期管理。
+
+#### 构造函数
+```cpp
+LuaState();
+```
+
+#### JIT 控制方法
+```cpp
+// 启用 JIT 编译
+bool enable_jit();
+
+// 禁用 JIT 编译（切换到解释模式）
+bool disable_jit();
+
+// 刷新 JIT 编译器缓存（清除已编译的代码）
+bool flush_jit();
+
+// 检查 JIT 是否启用
+bool is_jit_enabled() const;
+```
+
+#### 加载 Lua 代码
+```cpp
+// 加载并执行 Lua 文件
+bool load_file(const char* filename, std::string* error_msg = nullptr);
+
+// 加载并执行 Lua 代码缓冲区
+bool load_buffer(const char* buffer, size_t size, const char* name,
+                std::string* error_msg = nullptr);
+```
+
+### LuaStackGuard 类
+
+RAII 栈守卫，自动管理 Lua 栈平衡。
+
+```cpp
+{
+    lua_State* L = lua_state.get();
+    LuaStackGuard guard(L);  // 记录当前栈位置
+
+    // ... 执行 Lua 操作，可能会修改栈 ...
+
+    // 离开作用域时，自动恢复栈位置
+}
+```
+
 ### RuleEngine 类
 
 #### 构造函数
@@ -356,14 +407,14 @@ bool reload_rule(const std::string& rule_name, std::string* error_msg = nullptr)
 ```cpp
 bool match_rule(const std::string& rule_name,
                 const DataAdapter& data_adapter,
-                MatchResult* result = nullptr,
+                MatchResult& result,
                 std::string* error_msg = nullptr);
 ```
 
 #### 匹配所有规则
 ```cpp
 bool match_all_rules(const DataAdapter& data_adapter,
-                     std::vector<MatchResult>* results = nullptr,
+                     std::vector<MatchResult>& results,
                      std::string* error_msg = nullptr);
 ```
 
@@ -381,10 +432,20 @@ void clear_rules();
 
 ## 性能优化
 
-1. **启用 JIT**: LuaJIT 会自动将热点的 Lua 代码编译为机器码
+1. **启用 JIT**: LuaJIT 默认启用 JIT，会自动将热点的 Lua 代码编译为机器码，可以通过 `enable_jit()`/`disable_jit()` 动态控制
 2. **减少数据转换**: 适配器实现时避免不必要的拷贝
 3. **规则复用**: 规则文件只需加载一次，后续调用直接使用缓存
 4. **批量匹配**: 使用 `match_all_rules` 一次性匹配所有规则
+5. **栈管理**: 使用 `LuaStackGuard` 自动管理栈平衡，避免手动管理错误
+
+## 安全性
+
+1. **最小权限原则**: 默认只加载必要的 Lua 标准库
+   - ✅ 加载：base、table、string、math
+   - ❌ 不加载：io（文件操作）、os（系统操作）、debug（调试）、package（模块加载）
+2. **栈安全**: 使用 RAII 栈守卫自动管理 Lua 栈，避免栈溢出和内存泄漏
+3. **类型安全**: 使用引用而非指针传递结果，避免空指针异常
+4. **错误处理**: 所有可能失败的操作都返回状态码和错误信息
 
 ## 注意事项
 

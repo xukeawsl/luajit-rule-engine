@@ -41,7 +41,8 @@ int main() {
     JsonAdapter adapter1(valid_user);
 
     // 匹配单个规则
-    if (engine.match_rule("age_check", adapter1)) {
+    MatchResult result;
+    if (engine.match_rule("age_check", adapter1, result)) {
         std::cout << "✓ age_check 规则匹配成功" << std::endl;
     } else {
         std::cout << "✗ age_check 规则匹配失败" << std::endl;
@@ -49,7 +50,7 @@ int main() {
 
     // 匹配所有规则
     std::vector<MatchResult> results;
-    if (engine.match_all_rules(adapter1, &results, &error_msg)) {
+    if (engine.match_all_rules(adapter1, results)) {
         std::cout << "✓ 所有规则匹配成功" << std::endl;
     } else {
         std::cout << "✗ 部分规则匹配失败" << std::endl;
@@ -76,7 +77,7 @@ int main() {
 
     JsonAdapter adapter2(invalid_user1);
 
-    if (engine.match_all_rules(adapter2, &results, &error_msg)) {
+    if (engine.match_all_rules(adapter2, results)) {
         std::cout << "✓ 所有规则匹配成功" << std::endl;
     } else {
         std::cout << "✗ 部分规则匹配失败" << std::endl;
@@ -102,7 +103,7 @@ int main() {
 
     JsonAdapter adapter3(invalid_user2);
 
-    if (engine.match_all_rules(adapter3, &results, &error_msg)) {
+    if (engine.match_all_rules(adapter3, results)) {
         std::cout << "✓ 所有规则匹配成功" << std::endl;
     } else {
         std::cout << "✗ 部分规则匹配失败" << std::endl;

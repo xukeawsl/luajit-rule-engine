@@ -21,6 +21,7 @@ bool RuleEngine::load_rule_config(const char* config_file, std::string* error_ms
 
     // 配置文件应该返回一个table，现在在栈顶
     lua_State* L = _lua_state.get();
+    LuaStackGuard guard(L);  // 自动管理栈平衡
 
     // 检查栈顶是否是table
     if (!lua_istable(L, -1)) {
@@ -32,13 +33,13 @@ bool RuleEngine::load_rule_config(const char* config_file, std::string* error_ms
 
     // 遍历table中的每个规则配置
     lua_pushnil(L); // 第一个key
+    // lua_next 会从栈上弹出一个 key（键）， 然后把索引指定的表中 key-value（健值）对压入堆栈
     while (lua_next(L, -2) != 0) {
         // 现在栈上: -1 => value, -2 => key
         if (lua_istable(L, -1)) {
             // 获取规则名称
             lua_getfield(L, -1, "name");
             if (!lua_isstring(L, -1)) {
-                lua_pop(L, 2); // 弹出value和key
                 if (error_msg) {
                     *error_msg = "Rule name must be a string";
                 }
@@ -50,7 +51,6 @@ bool RuleEngine::load_rule_config(const char* config_file, std::string* error_ms
             // 获取规则文件路径
             lua_getfield(L, -1, "file");
             if (!lua_isstring(L, -1)) {
-                lua_pop(L, 2); // 弹出value和key
                 if (error_msg) {
                     *error_msg = "Rule file must be a string";
                 }
@@ -61,7 +61,6 @@ bool RuleEngine::load_rule_config(const char* config_file, std::string* error_ms
 
             // 添加规则
             if (!add_rule(rule_name, file_path, error_msg)) {
-                lua_pop(L, 2); // 弹出value和key
                 return false;
             }
         }
@@ -70,6 +69,7 @@ bool RuleEngine::load_rule_config(const char* config_file, std::string* error_ms
     }
 
     return true;
+    // 栈守卫析构时自动清理栈
 }
 
 bool RuleEngine::add_rule(const std::string& rule_name, const std::string& file_path,
@@ -89,12 +89,13 @@ bool RuleEngine::add_rule(const std::string& rule_name, const std::string& file_
 
     // 将 match 函数保存到规则表中
     lua_State* L = _lua_state.get();
+    LuaStackGuard guard(L);  // 自动管理栈平衡
+
     lua_getglobal(L, "match");  // 获取全局 match 函数
     if (!lua_isfunction(L, -1)) {
         if (error_msg) {
             *error_msg = "Rule file must define a 'match' function";
         }
-        lua_pop(L, 1);
         return false;
     }
 
@@ -111,7 +112,6 @@ bool RuleEngine::add_rule(const std::string& rule_name, const std::string& file_
     lua_pushstring(L, rule_name.c_str());  // key
     lua_pushvalue(L, -3);  // value (match 函数)
     lua_rawset(L, -3);  // _rule_functions[rule_name] = match
-    lua_pop(L, 2);  // 弹出 _rule_functions 表和 match 函数
 
     // 添加到规则列表
     Rule rule;
@@ -121,6 +121,7 @@ bool RuleEngine::add_rule(const std::string& rule_name, const std::string& file_
     _rules[rule_name] = rule;
 
     return true;
+    // 栈守卫析构时自动清理栈
 }
 
 bool RuleEngine::remove_rule(const std::string& rule_name) {
@@ -153,7 +154,7 @@ bool RuleEngine::reload_rule(const std::string& rule_name, std::string* error_ms
 }
 
 bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
-                            MatchResult* result, std::string* error_msg) {
+                            MatchResult& result, std::string* error_msg) {
     auto it = _rules.find(rule_name);
     if (it == _rules.end()) {
         if (error_msg) {
@@ -173,23 +174,19 @@ bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& dat
 }
 
 bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
-                                 std::vector<MatchResult>* results,
+                                 std::vector<MatchResult>& results,
                                  std::string* error_msg) {
-    if (results) {
-        results->clear();
-        results->reserve(_rules.size());
-    }
+    results.clear();
+    results.reserve(_rules.size());
 
     bool all_matched = true;
     for (const auto& pair : _rules) {
         MatchResult result;
-        if (!match_rule(pair.first, data_adapter, &result, error_msg)) {
-            if (results) {
-                results->push_back(result);
-            }
+        if (!match_rule(pair.first, data_adapter, result, error_msg)) {
+            results.push_back(result);
             all_matched = false;
-        } else if (results) {
-            results->push_back(result);
+        } else {
+            results.push_back(result);
         }
 
         if (!result.matched) {
@@ -229,9 +226,10 @@ bool RuleEngine::load_rule_file(const std::string& file_path, std::string* error
 
 bool RuleEngine::call_match_function(const std::string& rule_name,
                                      const DataAdapter& data_adapter,
-                                     MatchResult* result,
+                                     MatchResult& result,
                                      std::string* error_msg) {
     lua_State* L = _lua_state.get();
+    LuaStackGuard guard(L);  // 自动管理栈平衡
 
     // 从规则函数表中获取对应规则的match函数
     lua_getglobal(L, "_rule_functions");
@@ -239,7 +237,6 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
         if (error_msg) {
             *error_msg = "Rule function table not found";
         }
-        lua_pop(L, 1);
         return false;
     }
 
@@ -251,13 +248,11 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
         if (error_msg) {
             *error_msg = "Rule '" + rule_name + "' match function not found";
         }
-        lua_pop(L, 1);
         return false;
     }
 
     // 将数据压入栈顶
     if (!data_adapter.push_to_lua(L, error_msg)) {
-        lua_pop(L, 1); // 弹出函数
         return false;
     }
 
@@ -274,7 +269,6 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
         if (error_msg) {
             *error_msg = "First return value of 'match' must be boolean";
         }
-        lua_pop(L, 2);
         return false;
     }
     bool matched = lua_toboolean(L, -2);
@@ -284,14 +278,12 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
     if (lua_isstring(L, -1)) {
         message = lua_tostring(L, -1);
     }
-    lua_pop(L, 2); // 弹出两个返回值
 
-    if (result) {
-        result->matched = matched;
-        result->message = message;
-    }
+    result.matched = matched;
+    result.message = message;
 
     return true;
+    // 栈守卫析构时自动清理栈
 }
 
 } // namespace ljre
