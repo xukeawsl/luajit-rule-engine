@@ -35,9 +35,11 @@ bool JsonAdapter::push_json_value(lua_State* L, const nlohmann::json& j,
                 lua_pushnumber(L, j.get<lua_Number>());
                 break;
 
-            case nlohmann::json::value_t::string:
-                lua_pushstring(L, j.get<std::string>().c_str());
+            case nlohmann::json::value_t::string: {
+                const std::string& str = j.get_ref<const std::string&>();
+                lua_pushlstring(L, str.data(), str.size());
                 break;
+            }
 
             case nlohmann::json::value_t::array: {
                 lua_createtable(L, j.size(), 0);
@@ -57,8 +59,9 @@ bool JsonAdapter::push_json_value(lua_State* L, const nlohmann::json& j,
                 lua_createtable(L, 0, static_cast<int>(j.size()));
 
                 for (auto it = j.begin(); it != j.end(); ++it) {
-                    // 先压入key
-                    lua_pushstring(L, it.key().c_str());
+                    // 先压入key（使用 pushlstring 支持包含空字符的 key）
+                    const auto& key = it.key();
+                    lua_pushlstring(L, key.data(), key.size());
 
                     // 再压入value
                     if (!push_json_value(L, it.value(), error_msg)) {

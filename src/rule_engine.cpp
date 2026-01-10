@@ -109,7 +109,7 @@ bool RuleEngine::add_rule(const std::string& rule_name, const std::string& file_
     }
 
     // 将 match 函数存入表中
-    lua_pushstring(L, rule_name.c_str());  // key
+    lua_pushlstring(L, rule_name.data(), rule_name.size());  // key
     lua_pushvalue(L, -3);  // value (match 函数)
     lua_rawset(L, -3);  // _rule_functions[rule_name] = match
 
@@ -240,7 +240,7 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
         return false;
     }
 
-    lua_pushstring(L, rule_name.c_str());
+    lua_pushlstring(L, rule_name.data(), rule_name.size());
     lua_rawget(L, -2);  // 获取 _rule_functions[rule_name]
     lua_remove(L, -2);  // 移除 _rule_functions 表
 
