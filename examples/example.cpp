@@ -49,7 +49,7 @@ int main() {
     }
 
     // 匹配所有规则
-    std::vector<MatchResult> results;
+    std::map<std::string, MatchResult> results;
     if (engine.match_all_rules(adapter1, results)) {
         std::cout << "✓ 所有规则匹配成功" << std::endl;
     } else {
@@ -57,9 +57,10 @@ int main() {
     }
 
     std::cout << "\n详细结果:" << std::endl;
-    for (const auto& result : results) {
-        std::cout << "  " << (result.matched ? "✓" : "✗") << " "
-                  << result.message << std::endl;
+    for (const auto& pair : results) {
+        std::cout << "  [" << pair.first << "] "
+                  << (pair.second.matched ? "✓" : "✗") << " "
+                  << pair.second.message << std::endl;
     }
 
     std::cout << "\n" << std::string(50, '-') << "\n" << std::endl;
@@ -76,17 +77,19 @@ int main() {
     std::cout << invalid_user1.dump(2) << std::endl;
 
     JsonAdapter adapter2(invalid_user1);
+    std::map<std::string, MatchResult> results2;
 
-    if (engine.match_all_rules(adapter2, results)) {
+    if (engine.match_all_rules(adapter2, results2)) {
         std::cout << "✓ 所有规则匹配成功" << std::endl;
     } else {
         std::cout << "✗ 部分规则匹配失败" << std::endl;
     }
 
     std::cout << "\n详细结果:" << std::endl;
-    for (const auto& result : results) {
-        std::cout << "  " << (result.matched ? "✓" : "✗") << " "
-                  << result.message << std::endl;
+    for (const auto& pair : results2) {
+        std::cout << "  [" << pair.first << "] "
+                  << (pair.second.matched ? "✓" : "✗") << " "
+                  << pair.second.message << std::endl;
     }
 
     std::cout << "\n" << std::string(50, '-') << "\n" << std::endl;
@@ -102,17 +105,19 @@ int main() {
     std::cout << invalid_user2.dump(2) << std::endl;
 
     JsonAdapter adapter3(invalid_user2);
+    std::map<std::string, MatchResult> results3;
 
-    if (engine.match_all_rules(adapter3, results)) {
+    if (engine.match_all_rules(adapter3, results3)) {
         std::cout << "✓ 所有规则匹配成功" << std::endl;
     } else {
         std::cout << "✗ 部分规则匹配失败" << std::endl;
     }
 
     std::cout << "\n详细结果:" << std::endl;
-    for (const auto& result : results) {
-        std::cout << "  " << (result.matched ? "✓" : "✗") << " "
-                  << result.message << std::endl;
+    for (const auto& pair : results3) {
+        std::cout << "  [" << pair.first << "] "
+                  << (pair.second.matched ? "✓" : "✗") << " "
+                  << pair.second.message << std::endl;
     }
 
     std::cout << "\n" << std::string(50, '-') << "\n" << std::endl;

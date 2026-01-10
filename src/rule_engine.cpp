@@ -131,6 +131,17 @@ bool RuleEngine::remove_rule(const std::string& rule_name) {
         return false;
     }
 
+    // 从 Lua 的 _rule_functions 表中删除规则函数
+    lua_State* L = _lua_state.get();
+    LuaStackGuard guard(L);
+
+    lua_getglobal(L, "_rule_functions");
+    if (lua_istable(L, -1)) {
+        lua_pushlstring(L, rule_name.data(), rule_name.size());
+        lua_pushnil(L);
+        lua_rawset(L, -3);  // _rule_functions[rule_name] = nil
+    }
+
     _rules.erase(it);
     return true;
 }
@@ -144,14 +155,14 @@ bool RuleEngine::reload_rule(const std::string& rule_name, std::string* error_ms
         return false;
     }
 
-    // 重新加载规则文件
-    if (!load_rule_file(it->second.file_path, error_msg)) {
-        it->second.loaded = false;
-        return false;
-    }
+    // 保存文件路径
+    std::string file_path = it->second.file_path;
 
-    it->second.loaded = true;
-    return true;
+    // 移除旧规则（会清理 _rule_functions 表）
+    remove_rule(rule_name);
+
+    // 重新添加规则（这会重新加载并更新 _rule_functions 表）
+    return add_rule(rule_name, file_path, error_msg);
 }
 
 bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
@@ -175,19 +186,18 @@ bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& dat
 }
 
 bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
-                                 std::vector<MatchResult>& results,
+                                 std::map<std::string, MatchResult>& results,
                                  std::string* error_msg) {
     results.clear();
-    results.reserve(_rules.size());
 
     bool all_matched = true;
     for (const auto& pair : _rules) {
         MatchResult result;
         if (!match_rule(pair.first, data_adapter, result, error_msg)) {
-            results.push_back(result);
+            results[pair.first] = result;
             all_matched = false;
         } else {
-            results.push_back(result);
+            results[pair.first] = result;
         }
 
         if (!result.matched) {

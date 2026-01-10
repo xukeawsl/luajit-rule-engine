@@ -11,6 +11,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# 覆盖率选项
+option(BUILD_COVERAGE "Build with coverage reporting" OFF)
+if(BUILD_COVERAGE)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(--coverage)
+        add_link_options(--coverage)
+    endif()
+endif()
+
 # 设置 LuaJIT 路径
 set(LUAJIT_ROOT "/usr/local/3rd/luajit-2.1.0-beta3" CACHE PATH "LuaJIT installation directory")
 

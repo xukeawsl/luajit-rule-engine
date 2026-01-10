@@ -55,14 +55,189 @@ luajit-rule-engine/
 ## 编译
 
 ```bash
-# 方法1: 使用构建脚本（推荐）
-./build.sh
-
-# 方法2: 手动编译
 mkdir build && cd build
 cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3
 make -j$(nproc)
 ```
+
+## 测试
+
+项目使用 GoogleTest 框架进行单元测试。
+
+> 💡 **快速开始**: 使用提供的测试脚本
+> ```bash
+> # 运行所有测试
+> ./run_tests.sh
+>
+> # 生成覆盖率报告
+> ./run_tests.sh -c
+>
+> # 查看更多选项
+> ./run_tests.sh --help
+> ```
+
+详细的测试指南请参阅 [TESTING.md](TESTING.md)。
+
+### 编译测试
+
+```bash
+mkdir build && cd build
+cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3
+make -j$(nproc)
+```
+
+测试可执行文件会生成在 `build/tests/` 目录下。
+
+### 运行所有测试
+
+```bash
+# 使用 CTest 运行所有测试
+cd build
+ctest --output-on-failure
+
+# 或者查看详细输出
+ctest --verbose
+
+# 运行特定测试
+ctest -R lua_state_test
+ctest -R data_adapter_test
+```
+
+### 直接运行单个测试可执行文件
+
+```bash
+# 运行所有测试并显示简要结果
+./build/tests/lua_state_test --gtest_brief=yes
+
+# 运行特定测试用例
+./build/tests/lua_state_test --gtest_filter="LuaStateTest.LoadFile*"
+
+# 运行测试并显示详细输出
+./build/tests/lua_state_test --gtest_print_time=1
+```
+
+### 测试覆盖率
+
+项目支持使用 GCC/Clang 的 gcov/lcov 生成代码覆盖率报告。
+
+#### 1. 编译带覆盖率信息的版本
+
+```bash
+mkdir build && cd build
+cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3 -DBUILD_COVERAGE=ON
+make -j$(nproc)
+```
+
+#### 2. 运行测试
+
+```bash
+# 运行所有测试以生成覆盖率数据
+ctest
+```
+
+#### 3. 生成覆盖率报告
+
+```bash
+# 方法1: 使用 lcov 生成 HTML 报告（推荐）
+lcov --capture --directory . --output-file coverage.info
+lcov --remove coverage.info '/usr/*' --output-file coverage.info
+lcov --remove coverage.info 'third-party/*' --output-file coverage.info
+lcov --remove coverage.info 'tests/*' --output-file coverage.info
+genhtml coverage.info --output-directory coverage_html
+
+# 在浏览器中打开报告
+# firefox coverage_html/index.html  (Linux)
+# open coverage_html/index.html     (macOS)
+```
+
+> 💡 **快捷方式**: 使用提供的脚本查看覆盖率
+> ```bash
+> # 生成并查看覆盖率（Ubuntu/Debian）
+> ./view_coverage.sh
+> ```
+
+#### 4. 查看覆盖率摘要
+
+```bash
+lcov --summary coverage.info
+```
+
+示例输出：
+```
+Summary coverage rate:
+  lines......: 90.4% (1945 of 2152 lines)
+  functions..: 90.5% (813 of 898 functions)
+  branches...: no data found
+```
+
+#### 5. 在浏览器中查看详细报告
+
+**使用 Python HTTP 服务器（推荐）**
+
+```bash
+# 方法1: 使用快捷脚本（默认端口 8000）
+./view_coverage.sh
+
+# 方法2: 指定自定义端口
+./view_coverage.sh 9000
+
+# 方法3: 手动启动
+cd build/coverage_html
+python3 -m http.server 8000
+# 然后在浏览器中访问: http://localhost:8000
+```
+
+服务器启动后，在浏览器中访问显示的地址即可查看覆盖率报告。按 `Ctrl+C` 停止服务器。
+
+### 测试结构
+
+测试文件位于 `tests/` 目录，按模块组织：
+
+```
+tests/
+├── test_helpers.h              # 测试辅助工具和测试数据
+├── CMakeLists.txt              # 测试构建配置
+├── lua_state_test.cpp          # LuaState 类测试（32个测试用例）
+├── lua_stack_guard_test.cpp    # LuaStackGuard 类测试（17个测试用例）
+├── data_adapter_test.cpp       # 数据适配器测试（35个测试用例）
+├── rule_engine_test.cpp        # 规则引擎测试（43个测试用例）
+└── integration_test.cpp        # 集成测试（11个测试用例）
+```
+
+### 测试覆盖率目标
+
+- **总体目标**: ≥85% 代码覆盖率
+- **核心模块**: ≥90% 代码覆盖率
+  - `LuaState`: 核心状态管理
+  - `LuaStackGuard`: 栈安全管理
+  - `JsonAdapter`: 数据转换
+  - `RuleEngine`: 规则引擎核心逻辑
+
+### 持续集成
+
+在提交代码前，请确保：
+
+1. **所有测试通过**
+   ```bash
+   cd build && ctest
+   ```
+
+2. **代码覆盖率符合要求**
+   ```bash
+   # 生成覆盖率报告
+   lcov --summary coverage.info
+   ```
+
+3. **无内存泄漏**
+   ```bash
+   # 使用 valgrind 检查
+   valgrind --leak-check=full ./tests/lua_state_test
+   ```
+
+4. **符合编码规范**
+   - 私有成员变量使用 `_` 前缀
+   - 注释使用中文
+   - 不使用异常
 
 ## 运行示例
 
@@ -266,13 +441,15 @@ int main() {
     }
 
     // 匹配所有规则
-    std::vector<MatchResult> results;
+    std::map<std::string, MatchResult> results;
     if (engine.match_all_rules(adapter, results)) {
         std::cout << "所有规则匹配成功" << std::endl;
     } else {
         std::cout << "部分规则匹配失败" << std::endl;
-        for (const auto& r : results) {
-            std::cout << "  - " << (r.matched ? "✓" : "✗") << " " << r.message << std::endl;
+        for (const auto& pair : results) {
+            std::cout << "  - [" << pair.first << "] "
+                      << (pair.second.matched ? "✓" : "✗") << " "
+                      << pair.second.message << std::endl;
         }
     }
 
@@ -344,9 +521,6 @@ bool disable_jit();
 
 // 刷新 JIT 编译器缓存（清除已编译的代码）
 bool flush_jit();
-
-// 检查 JIT 是否启用
-bool is_jit_enabled() const;
 ```
 
 #### 加载 Lua 代码
@@ -414,9 +588,10 @@ bool match_rule(const std::string& rule_name,
 #### 匹配所有规则
 ```cpp
 bool match_all_rules(const DataAdapter& data_adapter,
-                     std::vector<MatchResult>& results,
+                     std::map<std::string, MatchResult>& results,
                      std::string* error_msg = nullptr);
 ```
+返回的 `results` 是一个 `std::map`，键为规则名，值为匹配结果，按规则名字母顺序排序。
 
 #### 获取规则信息
 ```cpp
@@ -462,3 +637,9 @@ MIT License
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request！
+
+## 文档
+
+- [测试指南 (TESTING.md)](TESTING.md) - 详细的测试说明、覆盖率报告生成、测试最佳实践
+- [覆盖率快速指南 (docs/COVERAGE_QUICKSTART.md)](docs/COVERAGE_QUICKSTART.md) - 快速查看覆盖率报告
+- [Ubuntu 覆盖率指南 (docs/COVERAGE_UBUNTU.md)](docs/COVERAGE_UBUNTU.md) - Ubuntu 用户覆盖率查看详细说明

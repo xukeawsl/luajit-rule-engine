@@ -32,8 +32,6 @@ public:
     bool disable_jit();
     // 刷新 JIT 编译器缓存（清除已编译的代码）
     bool flush_jit();
-    // 检查 JIT 是否启用
-    bool is_jit_enabled() const;
 
     // 加载并执行Lua文件
     // 成功返回true，失败返回false

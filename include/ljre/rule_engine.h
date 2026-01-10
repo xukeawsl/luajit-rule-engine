@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -60,9 +61,9 @@ public:
                     MatchResult& result, std::string* error_msg = nullptr);
 
     // 检查所有规则是否匹配
-    // results 存储每个规则的匹配结果
+    // results 存储 {规则名: 匹配结果} 的映射，按规则名字母顺序排序
     bool match_all_rules(const DataAdapter& data_adapter,
-                         std::vector<MatchResult>& results,
+                         std::map<std::string, MatchResult>& results,
                          std::string* error_msg = nullptr);
 
     // 获取所有规则信息

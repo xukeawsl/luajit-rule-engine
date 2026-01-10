@@ -125,33 +125,4 @@ bool LuaState::flush_jit() {
     return luaJIT_setmode(_L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_FLUSH) != 0;
 }
 
-bool LuaState::is_jit_enabled() const {
-    if (!_L) {
-        return false;
-    }
-
-    // 使用栈守卫确保栈平衡
-    LuaStackGuard guard(_L);
-
-    // 通过检查 jit 模块的状态来判断 JIT 是否启用
-    lua_getglobal(_L, "jit");
-    if (!lua_istable(_L, -1)) {
-        return false;
-    }
-
-    lua_getfield(_L, -1, "status");
-    if (!lua_isfunction(_L, -1)) {
-        return false;
-    }
-
-    // 调用 jit.status() 函数
-    if (lua_pcall(_L, 0, 1, 0) != LUA_OK) {
-        return false;
-    }
-
-    // jit.status() 返回 true 表示 JIT 已启用，false 或带参数表示禁用或部分禁用
-    return lua_toboolean(_L, -1) != 0;
-    // 栈守卫析构时自动恢复栈
-}
-
 } // namespace ljre
