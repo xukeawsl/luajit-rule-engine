@@ -32,3 +32,13 @@ Thumbs.db
 
 # Third-party (optional, uncomment if you don't want to track third-party libs)
 # third-party/
+
+# Benchmark results
+benchmarks/results/*.json
+benchmarks/results/*.md
+benchmarks/results/*.html
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class

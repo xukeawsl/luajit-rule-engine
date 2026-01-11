@@ -243,6 +243,27 @@ void RuleEngine::clear_rules() {
     _rules.clear();
 }
 
+bool RuleEngine::enable_jit() {
+    if (!_lua_state.is_valid()) {
+        return false;
+    }
+    return _lua_state.enable_jit();
+}
+
+bool RuleEngine::disable_jit() {
+    if (!_lua_state.is_valid()) {
+        return false;
+    }
+    return _lua_state.disable_jit();
+}
+
+bool RuleEngine::flush_jit() {
+    if (!_lua_state.is_valid()) {
+        return false;
+    }
+    return _lua_state.flush_jit();
+}
+
 bool RuleEngine::load_rule_file(const std::string& file_path, std::string* error_msg) {
     return _lua_state.load_file(file_path.c_str(), error_msg);
 }

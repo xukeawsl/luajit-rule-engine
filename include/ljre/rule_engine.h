@@ -77,6 +77,16 @@ public:
     // 清空所有规则
     void clear_rules();
 
+    // JIT 控制方法
+    // 启用 JIT 编译（默认已启用）
+    bool enable_jit();
+
+    // 禁用 JIT 编译，切换到解释模式
+    bool disable_jit();
+
+    // 刷新 JIT 编译器缓存，清除已编译的代码
+    bool flush_jit();
+
 protected:
     // 用于测试：允许派生类访问内部状态
     // 测试类可以继承 RuleEngine 并访问这些成员
