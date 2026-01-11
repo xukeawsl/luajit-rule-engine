@@ -5,20 +5,19 @@ namespace ljre {
 
 LuaState::LuaState() : _L(luaL_newstate()) {
     if (_L) {
-        // 启用JIT编译（默认启用）
-        luaJIT_setmode(_L, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_ON);
-
         // 只打开规则引擎必要的库
         // base: 基础函数 (print, assert, tonumber, tostring, pcall 等)
         // table: 表操作 (insert, remove, sort 等)
         // string: 字符串操作
         // math: 数学函数
         // 不打开: io (文件操作), os (操作系统操作), debug (调试),
-        //         package (模块加载), bit, ffi, jit
+        //         package (模块加载), bit, ffi
         luaopen_base(_L);
         luaopen_table(_L);
         luaopen_string(_L);
         luaopen_math(_L);
+        // 必须加载 jit 库以使用 JIT 控制功能
+        luaopen_jit(_L);
     }
 }
 
@@ -86,13 +85,7 @@ std::string LuaState::get_error_string() {
     }
 
     if (lua_isstring(_L, -1)) {
-        const char* error_msg = lua_tostring(_L, -1);
-        std::string error;
-        if (error_msg) {
-            error = error_msg;
-        } else {
-            error = "Empty error message";
-        }
+        std::string error = lua_tostring(_L, -1);
         lua_pop(_L, 1);
         return error;
     }

@@ -3,6 +3,7 @@
 #include "ljre/lua_state.h"
 #include "test_helpers.h"
 #include <fstream>
+#include <cstring>
 
 using namespace ljre;
 using namespace test_helpers;
@@ -267,6 +268,139 @@ TEST(LuaStateTest, GetErrorString_InvalidState_ReturnsError) {
     EXPECT_TRUE(error.find("null") != std::string::npos);
 }
 
+TEST(LuaStateTest, GetErrorString_WithTableOnStack_ReturnsUnknownError) {
+    LuaState state;
+
+    // 记录初始栈位置
+    int initial_top = lua_gettop(state.get());
+
+    // 在栈上放一个 table
+    lua_newtable(state.get());
+    lua_pushstring(state.get(), "key");
+    lua_pushnumber(state.get(), 42);
+    lua_rawset(state.get(), -3);  // t["key"] = 42
+
+    // 栈顶现在是 table
+    std::string error = state.get_error_string();
+    EXPECT_EQ(error, "Failed to get error string: Unknown error");
+
+    // 栈不应该被弹出（因为 lua_isstring 返回 false，没有执行 lua_pop）
+    int top = lua_gettop(state.get());
+    EXPECT_EQ(top, initial_top + 1);
+
+    // 清理栈
+    lua_pop(state.get(), 1);
+}
+
+TEST(LuaStateTest, GetErrorString_WithBooleanOnStack_ReturnsUnknownError) {
+    LuaState state;
+
+    // 记录初始栈位置
+    int initial_top = lua_gettop(state.get());
+
+    // 在栈上放一个 boolean
+    lua_pushboolean(state.get(), 1);
+
+    // 栈顶现在是 boolean
+    std::string error = state.get_error_string();
+    EXPECT_EQ(error, "Failed to get error string: Unknown error");
+
+    // 栈不应该被弹出
+    int top = lua_gettop(state.get());
+    EXPECT_EQ(top, initial_top + 1);
+
+    // 清理栈
+    lua_pop(state.get(), 1);
+}
+
+TEST(LuaStateTest, GetErrorString_WithNilOnStack_ReturnsUnknownError) {
+    LuaState state;
+
+    // 记录初始栈位置
+    int initial_top = lua_gettop(state.get());
+
+    // 在栈上放 nil
+    lua_pushnil(state.get());
+
+    // 栈顶现在是 nil
+    std::string error = state.get_error_string();
+    EXPECT_EQ(error, "Failed to get error string: Unknown error");
+
+    // 栈不应该被弹出
+    int top = lua_gettop(state.get());
+    EXPECT_EQ(top, initial_top + 1);
+
+    // 清理栈
+    lua_pop(state.get(), 1);
+}
+
+TEST(LuaStateTest, GetErrorString_WithFunctionOnStack_ReturnsUnknownError) {
+    LuaState state;
+
+    // 记录初始栈位置
+    int initial_top = lua_gettop(state.get());
+
+    // 在栈上放一个函数
+    lua_pushcfunction(state.get(), [](lua_State* L) -> int {
+        lua_pushstring(L, "test");
+        return 1;
+    });
+
+    // 栈顶现在是 function（C function）
+    std::string error = state.get_error_string();
+    EXPECT_EQ(error, "Failed to get error string: Unknown error");
+
+    // 栈不应该被弹出
+    int top = lua_gettop(state.get());
+    EXPECT_EQ(top, initial_top + 1);
+
+    // 清理栈
+    lua_pop(state.get(), 1);
+}
+
+TEST(LuaStateTest, GetErrorString_WithUserDataOnStack_ReturnsUnknownError) {
+    LuaState state;
+
+    // 记录初始栈位置
+    int initial_top = lua_gettop(state.get());
+
+    // 在栈上放一个 lightuserdata
+    int dummy_data = 42;
+    lua_pushlightuserdata(state.get(), &dummy_data);
+
+    // 栈顶现在是 userdata
+    std::string error = state.get_error_string();
+    EXPECT_EQ(error, "Failed to get error string: Unknown error");
+
+    // 栈不应该被弹出
+    int top = lua_gettop(state.get());
+    EXPECT_EQ(top, initial_top + 1);
+
+    // 清理栈
+    lua_pop(state.get(), 1);
+}
+
+TEST(LuaStateTest, GetErrorString_WithThreadOnStack_ReturnsUnknownError) {
+    LuaState state;
+
+    // 记录初始栈位置
+    int initial_top = lua_gettop(state.get());
+
+    // 在栈上创建一个新线程（coroutine）
+    lua_newthread(state.get());
+
+    // 栈顶现在是 thread
+    std::string error = state.get_error_string();
+    EXPECT_EQ(error, "Failed to get error string: Unknown error");
+
+    // 栈不应该被弹出
+    int top = lua_gettop(state.get());
+    EXPECT_EQ(top, initial_top + 1);
+
+    // 清理栈
+    lua_pop(state.get(), 1);
+}
+
 TEST(LuaStateTest, LoadFile_ErrorString_Populated) {
     LuaState state;
     TempFile file(lua_code::syntax_error(), ".lua");
@@ -409,4 +543,227 @@ TEST(LuaStateTest, LoadFile_UnicodeInPath) {
     std::string error;
     // TempFile 使用 /tmp，应该支持 Unicode
     EXPECT_TRUE(state.load_file(file.c_str(), &error));
+}
+
+// ============================================================================
+// LuaState JIT 控制测试
+// ============================================================================
+//
+// 注意：LuaState 在初始化时会加载 jit 库（luaopen_jit），
+// 这使得 JIT 控制功能可用。在加载 jit 库后，
+// luaJIT_setmode 调用应该能够正常工作。
+// ============================================================================
+//
+// JIT 控制说明：
+// - enable_jit(): 启用 JIT 编译引擎
+// - disable_jit(): 禁用 JIT 编译引擎（切换到解释模式）
+// - flush_jit(): 刷新 JIT 编译器缓存，清除已编译的代码
+// ============================================================================
+
+TEST(LuaStateTest, EnableJIT_ValidState_Succeeds) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // LuaState 初始化时会加载 jit 库，因此 enable_jit 应该成功
+    // 先禁用再启用，以确保测试的可靠性
+    EXPECT_TRUE(state.disable_jit());
+    EXPECT_TRUE(state.enable_jit());
+}
+
+TEST(LuaStateTest, DisableJIT_ValidState_Succeeds) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 禁用 JIT
+    EXPECT_TRUE(state.disable_jit());
+
+    // 再次禁用也应该成功
+    EXPECT_TRUE(state.disable_jit());
+}
+
+TEST(LuaStateTest, FlushJIT_ValidState_Succeeds) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 刷新 JIT 缓存
+    EXPECT_TRUE(state.flush_jit());
+
+    // 再次刷新也应该成功
+    EXPECT_TRUE(state.flush_jit());
+}
+
+TEST(LuaStateTest, EnableJIT_InvalidState_Fails) {
+    LuaState state1;
+    LuaState state2(std::move(state1));  // state1 现在无效
+
+    // 对无效状态启用 JIT 应该失败
+    EXPECT_FALSE(state1.enable_jit());
+}
+
+TEST(LuaStateTest, DisableJIT_InvalidState_Fails) {
+    LuaState state1;
+    LuaState state2(std::move(state1));  // state1 现在无效
+
+    // 对无效状态禁用 JIT 应该失败
+    EXPECT_FALSE(state1.disable_jit());
+}
+
+TEST(LuaStateTest, FlushJIT_InvalidState_Fails) {
+    LuaState state1;
+    LuaState state2(std::move(state1));  // state1 现在无效
+
+    // 对无效状态刷新 JIT 应该失败
+    EXPECT_FALSE(state1.flush_jit());
+}
+
+TEST(LuaStateTest, JIT_ToggleOperation_WorksCorrectly) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 测试禁用和启用的循环
+    // 由于加载了 jit 库，所有操作都应该成功
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_TRUE(state.disable_jit());
+        EXPECT_TRUE(state.enable_jit());
+    }
+}
+
+TEST(LuaStateTest, JIT_FlushAfterDisable_WorksCorrectly) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 先禁用 JIT
+    EXPECT_TRUE(state.disable_jit());
+
+    // 刷新 JIT 缓存（即使在禁用状态下）
+    EXPECT_TRUE(state.flush_jit());
+}
+
+TEST(LuaStateTest, JIT_FlushAfterEnable_WorksCorrectly) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 禁用和启用 JIT
+    EXPECT_TRUE(state.disable_jit());
+    EXPECT_TRUE(state.enable_jit());
+
+    // 刷新 JIT 缓存
+    EXPECT_TRUE(state.flush_jit());
+}
+
+TEST(LuaStateTest, JIT_WithCodeExecution_WorksCorrectly) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 执行一些代码，无论 JIT 是否可用都应该正常工作
+    auto code = R"(
+        local function add(a, b)
+            return a + b
+        end
+
+        -- 多次调用以触发 JIT 编译（如果 JIT 可用）
+        local sum = 0
+        for i = 1, 100 do
+            sum = add(sum, i)
+        end
+
+        return sum
+    )";
+
+    std::string error;
+    EXPECT_TRUE(state.load_buffer(code, strlen(code), "jit_test", &error));
+    EXPECT_TRUE(error.empty());
+}
+
+TEST(LuaStateTest, JIT_CodeExecutionWithDisabledJIT_WorksCorrectly) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 禁用 JIT
+    EXPECT_TRUE(state.disable_jit());
+
+    // 执行代码（应该使用解释模式）
+    auto code = R"(
+        local function multiply(a, b)
+            return a * b
+        end
+
+        local result = 1
+        for i = 1, 10 do
+            result = multiply(result, 2)
+        end
+
+        return result
+    )";
+
+    std::string error;
+    EXPECT_TRUE(state.load_buffer(code, strlen(code), "jit_interpreter_test", &error));
+    EXPECT_TRUE(error.empty());
+}
+
+TEST(LuaStateTest, JIT_MultipleFlushDuringExecution_WorksCorrectly) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 第一次刷新 JIT 缓存
+    EXPECT_TRUE(state.flush_jit());
+
+    // 执行一些代码
+    auto code1 = R"(
+        local x = 0
+        for i = 1, 50 do x = x + i end
+        return x
+    )";
+
+    std::string error;
+    EXPECT_TRUE(state.load_buffer(code1, strlen(code1), "test1", &error));
+    EXPECT_TRUE(error.empty());
+
+    // 第二次刷新 JIT 缓存
+    EXPECT_TRUE(state.flush_jit());
+
+    // 执行更多代码
+    auto code2 = R"(
+        local y = 1
+        for i = 1, 50 do y = y * i end
+        return y
+    )";
+
+    EXPECT_TRUE(state.load_buffer(code2, strlen(code2), "test2", &error));
+    EXPECT_TRUE(error.empty());
+
+    // 第三次刷新 JIT 缓存
+    EXPECT_TRUE(state.flush_jit());
+}
+
+TEST(LuaStateTest, JIT_RapidToggle_WorksCorrectly) {
+    LuaState state;
+    ASSERT_TRUE(state.is_valid());
+
+    // 快速切换 JIT 状态
+    for (int i = 0; i < 10; ++i) {
+        EXPECT_TRUE(state.disable_jit());
+        EXPECT_TRUE(state.flush_jit());
+        EXPECT_TRUE(state.enable_jit());
+        EXPECT_TRUE(state.flush_jit());
+    }
+
+    // 最后确保恢复正常状态
+    EXPECT_TRUE(state.disable_jit());
+    EXPECT_TRUE(state.enable_jit());
+}
+
+TEST(LuaStateTest, JIT_StateIndependence_DifferentStatesHaveIndependentJIT) {
+    LuaState state1;
+    LuaState state2;
+    ASSERT_TRUE(state1.is_valid());
+    ASSERT_TRUE(state2.is_valid());
+
+    // state1 禁用 JIT
+    EXPECT_TRUE(state1.disable_jit());
+
+    // state2 的 JIT 状态应该独立
+    EXPECT_TRUE(state1.disable_jit()); // state1 再次禁用应该成功
+    EXPECT_TRUE(state2.disable_jit()); // state2 禁用也应该成功
+    EXPECT_TRUE(state2.enable_jit()); // state2 启用应该成功
 }

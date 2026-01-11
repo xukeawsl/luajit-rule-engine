@@ -118,7 +118,6 @@ bool RuleEngine::add_rule(const std::string& rule_name, const std::string& file_
     Rule rule;
     rule.name = rule_name;
     rule.file_path = file_path;
-    rule.loaded = true;
     _rules[rule_name] = rule;
 
     return true;
@@ -147,6 +146,13 @@ bool RuleEngine::remove_rule(const std::string& rule_name) {
 }
 
 bool RuleEngine::reload_rule(const std::string& rule_name, std::string* error_msg) {
+    if (!_lua_state.is_valid()) {
+        if (error_msg) {
+            *error_msg = "Lua state is invalid";
+        }
+        return false;
+    }
+
     auto it = _rules.find(rule_name);
     if (it == _rules.end()) {
         if (error_msg) {
@@ -167,17 +173,17 @@ bool RuleEngine::reload_rule(const std::string& rule_name, std::string* error_ms
 
 bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
                             MatchResult& result, std::string* error_msg) {
-    auto it = _rules.find(rule_name);
-    if (it == _rules.end()) {
+    if (!_lua_state.is_valid()) {
         if (error_msg) {
-            *error_msg = "Rule '" + rule_name + "' not found";
+            *error_msg = "Lua state is invalid";
         }
         return false;
     }
 
-    if (!it->second.loaded) {
+    auto it = _rules.find(rule_name);
+    if (it == _rules.end()) {
         if (error_msg) {
-            *error_msg = "Rule '" + rule_name + "' is not loaded";
+            *error_msg = "Rule '" + rule_name + "' not found";
         }
         return false;
     }
@@ -188,6 +194,13 @@ bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& dat
 bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
                                  std::map<std::string, MatchResult>& results,
                                  std::string* error_msg) {
+    if (!_lua_state.is_valid()) {
+        if (error_msg) {
+            *error_msg = "Lua state is invalid";
+        }
+        return false;
+    }
+
     results.clear();
 
     bool all_matched = true;
@@ -216,7 +229,6 @@ std::vector<RuleInfo> RuleEngine::get_all_rules() const {
         RuleInfo info;
         info.name = pair.second.name;
         info.file_path = pair.second.file_path;
-        info.loaded = pair.second.loaded;
         infos.push_back(info);
     }
 

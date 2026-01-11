@@ -49,25 +49,26 @@ ctest --rerun-failed --output-on-failure
 
 | 测试文件 | 测试内容 | 测试用例数 | 状态 |
 |---------|---------|-----------|------|
-| `lua_state_test.cpp` | Lua 状态管理 | 32 | ✅ 全部通过 |
+| `lua_state_test.cpp` | Lua 状态管理 | 52 | ✅ 全部通过 |
 | `lua_stack_guard_test.cpp` | Lua 栈守卫 | 17 | ✅ 全部通过 |
-| `data_adapter_test.cpp` | 数据适配器 | 35 | ✅ 全部通过 |
-| `rule_engine_test.cpp` | 规则引擎 | 43 | ✅ 全部通过 |
+| `data_adapter_test.cpp` | 数据适配器 | 46 | ✅ 全部通过 |
+| `rule_engine_test.cpp` | 规则引擎 | 78 | ✅ 全部通过 |
 | `integration_test.cpp` | 集成测试 | 11 | ✅ 全部通过 |
-| **总计** | | **138** | **✅ 100% 通过** |
+| **总计** | | **204** | **✅ 100% 通过** |
 
 ### 测试分类
 
 #### 1. 单元测试 (Unit Tests)
 
-**lua_state_test.cpp** - LuaState 类测试
+**lua_state_test.cpp** - LuaState 类测试 (52个测试用例)
 - 构造和析构测试（移动语义）
 - 文件加载测试（成功/失败场景）
 - Buffer 加载测试
-- 错误处理测试
+- 错误处理测试（包括栈顶非字符串场景：table、boolean、nil、function、userdata、thread）
 - 栈操作测试
 - 安全性测试
 - 边界条件测试
+- JIT 控制测试（enable/disable/flush 及各种组合场景）
 
 **lua_stack_guard_test.cpp** - LuaStackGuard 类测试
 - 基本栈恢复测试
@@ -79,25 +80,26 @@ ctest --rerun-failed --output-on-failure
 - 表迭代场景测试
 - 错误处理场景测试
 
-**data_adapter_test.cpp** - JsonAdapter 类测试
+**data_adapter_test.cpp** - JsonAdapter 类测试 (46个测试用例)
 - 基本类型转换（null, boolean, number, string）
 - 数组转换测试
 - 对象转换测试
 - 嵌套结构测试
-- 特殊字符处理
-- 错误处理测试
-- 边界条件测试
+- 特殊字符处理（含空字符、Unicode 等）
+- 错误处理测试（包括异常捕获和错误传播）
+- 边界条件测试（深度嵌套、大量数据、混合类型）
 - 栈平衡测试
 
 #### 2. 集成测试 (Integration Tests)
 
-**rule_engine_test.cpp** - 规则引擎集成测试
+**rule_engine_test.cpp** - 规则引擎集成测试 (78个测试用例)
 - 规则加载和卸载
 - 规则匹配（单个和批量）
 - 规则热更新
-- 配置文件加载
+- 配置文件加载（包含各种错误场景）
 - 批量规则处理（使用 `std::map` 返回结果）
-- 错误场景处理
+- 错误场景处理（包括 Lua 状态无效、规则函数表不存在等）
+- call_match_function 错误路径完整覆盖
 
 **integration_test.cpp** - 端到端场景测试
 - 用户注册验证

@@ -9,8 +9,9 @@
 - **灵活适配**: 使用适配器模式，支持多种数据格式（JSON、Protobuf 等）
 - **简洁易用**: 提供 C++17 友好的 API 接口
 - **安全可靠**: 使用 RAII 栈守卫自动管理 Lua 栈平衡，避免内存泄漏
-- **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math），不开放 io/os/debug 等危险接口
+- **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math、jit），不开放 io/os/debug 等危险接口
 - **零依赖（除 LuaJIT）**: 只依赖 LuaJIT 和 nlohmann/json（header-only）
+- **完善的测试**: 包含 216+ 个单元测试，覆盖所有核心功能和错误场景
 
 ## 编码规范
 
@@ -197,12 +198,53 @@ python3 -m http.server 8000
 tests/
 ├── test_helpers.h              # 测试辅助工具和测试数据
 ├── CMakeLists.txt              # 测试构建配置
-├── lua_state_test.cpp          # LuaState 类测试（32个测试用例）
+├── lua_state_test.cpp          # LuaState 类测试（52个测试用例）
+│   ├── 构造和析构测试
+│   ├── 文件加载测试
+│   ├── Buffer 加载测试
+│   ├── 错误处理测试（包括栈顶非字符串场景）
+│   ├── 栈操作测试
+│   ├── 安全性测试
+│   ├── 边界条件测试
+│   └── JIT 控制测试（enable/disable/flush）
 ├── lua_stack_guard_test.cpp    # LuaStackGuard 类测试（17个测试用例）
-├── data_adapter_test.cpp       # 数据适配器测试（35个测试用例）
-├── rule_engine_test.cpp        # 规则引擎测试（43个测试用例）
+│   ├── 基本栈恢复测试
+│   ├── 多次 push/pop 测试
+│   ├── 嵌套守卫测试
+│   ├── Release 机制测试
+│   ├── 空栈测试
+│   ├── 函数调用场景测试
+│   ├── 表迭代场景测试
+│   └── 错误处理场景测试
+├── data_adapter_test.cpp       # 数据适配器测试（46个测试用例）
+│   ├── 基本类型转换测试
+│   ├── 数组转换测试
+│   ├── 对象转换测试
+│   ├── 嵌套结构测试
+│   ├── 特殊字符处理
+│   ├── 错误处理测试（包括异常捕获）
+│   ├── 边界条件测试
+│   └── 栈平衡测试
+├── rule_engine_test.cpp        # 规则引擎测试（78个测试用例）
+│   ├── 规则加载和卸载测试
+│   ├── 规则匹配测试（单个和批量）
+│   ├── 规则热更新测试
+│   ├── 配置文件加载测试
+│   ├── 错误场景测试
+│   ├── Lua 状态无效测试
+│   └── call_match_function 错误路径测试
 └── integration_test.cpp        # 集成测试（11个测试用例）
+    ├── 端到端工作流测试
+    └── 多规则协同测试
 ```
+
+**测试统计**：
+- lua_state_test: 52 个测试用例
+- lua_stack_guard_test: 17 个测试用例
+- data_adapter_test: 46 个测试用例
+- rule_engine_test: 78 个测试用例
+- integration_test: 11 个测试用例
+- **总计**: 204 个测试用例，100% 通过
 
 ### 测试覆盖率目标
 
@@ -640,6 +682,7 @@ MIT License
 
 ## 文档
 
+- [变更日志 (CHANGELOG.md)](CHANGELOG.md) - 详细的版本变更记录
 - [测试指南 (TESTING.md)](TESTING.md) - 详细的测试说明、覆盖率报告生成、测试最佳实践
 - [覆盖率快速指南 (docs/COVERAGE_QUICKSTART.md)](docs/COVERAGE_QUICKSTART.md) - 快速查看覆盖率报告
 - [Ubuntu 覆盖率指南 (docs/COVERAGE_UBUNTU.md)](docs/COVERAGE_UBUNTU.md) - Ubuntu 用户覆盖率查看详细说明

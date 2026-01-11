@@ -22,7 +22,6 @@ struct MatchResult {
 struct RuleInfo {
     std::string name;       // 规则名称
     std::string file_path;  // 规则文件路径
-    bool loaded;            // 是否已加载
 };
 
 // 规则引擎类
@@ -78,11 +77,15 @@ public:
     // 清空所有规则
     void clear_rules();
 
+protected:
+    // 用于测试：允许派生类访问内部状态
+    // 测试类可以继承 RuleEngine 并访问这些成员
+    LuaState& get_lua_state() { return _lua_state; }
+
 private:
     struct Rule {
         std::string name;
         std::string file_path;
-        bool loaded;
     };
 
     LuaState _lua_state;

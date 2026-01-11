@@ -92,7 +92,6 @@ TEST_F(RuleEngineTest, AddRule_ValidRule_Success) {
     ASSERT_EQ(rules.size(), 1);
     EXPECT_EQ(rules[0].name, "rule1");
     EXPECT_EQ(rules[0].file_path, "test_data/rules/always_pass.lua");
-    EXPECT_TRUE(rules[0].loaded);
 }
 
 TEST_F(RuleEngineTest, AddRule_DuplicateName_Fails) {
@@ -665,7 +664,6 @@ TEST_F(RuleEngineTest, GetRuleInfo_ReturnsCorrectInfo) {
     ASSERT_EQ(rules.size(), 1);
     EXPECT_EQ(rules[0].name, "test_rule");
     EXPECT_EQ(rules[0].file_path, "test_data/rules/age_check.lua");
-    EXPECT_TRUE(rules[0].loaded);
 }
 
 TEST_F(RuleEngineTest, AddAndRemoveMultipleRules_MaintainsCorrectState) {
@@ -789,4 +787,655 @@ TEST_F(RuleEngineTest, MatchRule_MessageContent_IsCorrect) {
     ASSERT_TRUE(engine.match_rule("age", invalid_adapter, fail_result, &error));
     EXPECT_FALSE(fail_result.message.empty());
     EXPECT_TRUE(fail_result.message.find("15") != std::string::npos);
+}
+
+// ============================================================================
+// RuleEngine 边界场景和非法状态测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, LoadRuleConfig_InvalidLuaFormat_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个格式错误的配置文件
+    test_helpers::TestDataFile invalid_config("invalid_config.lua", R"(
+        this is not valid lua at all!!@#
+    )");
+
+    EXPECT_FALSE(engine.load_rule_config(invalid_config.path().c_str(), &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, LoadRuleConfig_ConfigReturnsNil_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    // 配置文件返回 nil
+    test_helpers::TestDataFile nil_config("nil_config.lua", R"(
+        return nil
+    )");
+
+    EXPECT_FALSE(engine.load_rule_config(nil_config.path().c_str(), &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, LoadRuleConfig_ConfigReturnsNonTable_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    // 配置文件返回非 table 值
+    test_helpers::TestDataFile string_config("string_config.lua", R"(
+        return "just a string"
+    )");
+
+    EXPECT_FALSE(engine.load_rule_config(string_config.path().c_str(), &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, LoadRuleConfig_MissingNameField_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    // 缺少 name 字段
+    test_helpers::TestDataFile no_name_config("no_name_config.lua", R"(
+        return {
+            { file = "test_data/rules/always_pass.lua" }
+        }
+    )");
+
+    EXPECT_FALSE(engine.load_rule_config(no_name_config.path().c_str(), &error));
+    EXPECT_TRUE(error.find("name") != std::string::npos || error.find("field") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, LoadRuleConfig_MissingFileField_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    // 缺少 file 字段
+    test_helpers::TestDataFile no_file_config("no_file_config.lua", R"(
+        return {
+            { name = "rule1" }
+        }
+    )");
+
+    EXPECT_FALSE(engine.load_rule_config(no_file_config.path().c_str(), &error));
+    EXPECT_TRUE(error.find("file") != std::string::npos || error.find("field") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, LoadRuleConfig_NonExistentRuleFile_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    // 规则文件不存在
+    test_helpers::TestDataFile bad_ref_config("bad_ref_config.lua", R"(
+        return {
+            { name = "rule1", file = "nonexistent_rule.lua" }
+        }
+    )");
+
+    EXPECT_FALSE(engine.load_rule_config(bad_ref_config.path().c_str(), &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, LoadRuleConfig_EmptyConfig_Succeeds) {
+    RuleEngine engine;
+    std::string error;
+
+    // 空配置
+    test_helpers::TestDataFile empty_config("empty_config.lua", R"(
+        return {}
+    )");
+
+    EXPECT_TRUE(engine.load_rule_config(empty_config.path().c_str(), &error));
+    EXPECT_EQ(engine.get_rule_count(), 0);
+}
+
+// ============================================================================
+// RuleEngine 非法状态测试
+// ============================================================================
+
+// 测试用类：通过继承访问 protected 方法来模拟非法 Lua 状态
+class RuleEngineInvalidStateTest : public RuleEngine {
+public:
+    void invalidate_lua_state() {
+        // 通过移动使 Lua 状态无效
+        LuaState temp = std::move(get_lua_state());
+        // temp 析构时销毁 Lua 状态，get_lua_state() 返回的引用现在指向无效状态
+    }
+};
+
+TEST_F(RuleEngineTest, LoadRuleConfig_InvalidState_Fails) {
+    RuleEngineInvalidStateTest engine;
+    std::string error;
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 尝试加载配置应该失败
+    EXPECT_FALSE(engine.load_rule_config("test_data/configs/valid_config.lua", &error));
+    EXPECT_TRUE(error.find("invalid") != std::string::npos ||
+                error.find("null") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, AddRule_InvalidState_Fails) {
+    RuleEngineInvalidStateTest engine;
+    std::string error;
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 尝试添加规则应该失败
+    EXPECT_FALSE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    EXPECT_TRUE(error.find("invalid") != std::string::npos ||
+                error.find("null") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, RemoveRule_InvalidState_Fails) {
+    RuleEngineInvalidStateTest engine;
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 尝试移除规则应该失败
+    EXPECT_FALSE(engine.remove_rule("rule1"));
+}
+
+TEST_F(RuleEngineTest, ReloadRule_InvalidState_Fails) {
+    RuleEngineInvalidStateTest engine;
+    std::string error;
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 尝试重新加载规则应该失败
+    EXPECT_FALSE(engine.reload_rule("rule1", &error));
+    EXPECT_TRUE(error.find("invalid") != std::string::npos ||
+                error.find("null") != std::string::npos ||
+                error.find("not found") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, MatchRule_InvalidState_Fails) {
+    RuleEngineInvalidStateTest engine;
+    std::string error;
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 准备测试数据
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    // 尝试匹配规则应该失败
+    EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
+    EXPECT_TRUE(error.find("invalid") != std::string::npos ||
+                error.find("null") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_InvalidState_Fails) {
+    RuleEngineInvalidStateTest engine;
+    std::string error;
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 准备测试数据
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    // 尝试匹配所有规则应该失败
+    EXPECT_FALSE(engine.match_all_rules(adapter, results, &error));
+    EXPECT_TRUE(error.find("invalid") != std::string::npos ||
+                error.find("null") != std::string::npos);
+}
+
+// ============================================================================
+// RuleEngine 其他边界场景和非法状态测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, AddRule_EmptyFilePath_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_FALSE(engine.add_rule("rule1", "", &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, AddRule_InvalidRuleFile_MissingMatchFunction_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    // 没有匹配函数的规则文件
+    test_helpers::TestDataFile no_match_func("no_match.lua", R"(
+        local x = 10
+        -- 没有 match 函数
+    )");
+
+    EXPECT_FALSE(engine.add_rule("rule1", no_match_func.path().c_str(), &error));
+    EXPECT_TRUE(error.find("match") != std::string::npos ||
+                error.find("function") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, AddRule_DuplicateRuleName_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    // 尝试添加同名规则
+    EXPECT_FALSE(engine.add_rule("rule1", "test_data/rules/always_fail.lua", &error));
+    EXPECT_TRUE(error.find("exists") != std::string::npos ||
+                error.find("already") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, RemoveRule_Success) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    EXPECT_TRUE(engine.has_rule("rule1"));
+
+    EXPECT_TRUE(engine.remove_rule("rule1"));
+    EXPECT_FALSE(engine.has_rule("rule1"));
+}
+
+TEST_F(RuleEngineTest, ReloadRule_ChangesBehavior) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个规则文件
+    test_helpers::TestDataFile rule_file("dynamic_rule.lua", R"(
+        function match(data)
+            if data.value > 10 then
+                return true, "value is greater than 10"
+            else
+                return false, "value is not greater than 10"
+            end
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("dynamic", rule_file.path().c_str(), &error));
+
+    // 测试原始行为
+    json data1 = {{"value", 15}};
+    JsonAdapter adapter1(data1);
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("dynamic", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // 修改规则文件
+    test_helpers::TestDataFile new_rule_file("dynamic_rule.lua", R"(
+        function match(data)
+            if data.value > 20 then
+                return true, "value is greater than 20"
+            else
+                return false, "value is not greater than 20"
+            end
+        end
+    )");
+
+    // 重新加载规则
+    ASSERT_TRUE(engine.reload_rule("dynamic", &error));
+
+    // 测试新行为
+    json data2 = {{"value", 15}};
+    JsonAdapter adapter2(data2);
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("dynamic", adapter2, result2, &error));
+    EXPECT_FALSE(result2.matched); // 现在应该失败，因为阈值改为 20
+}
+
+TEST_F(RuleEngineTest, MatchRule_RuleThrowsError_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个会抛出错误的规则
+    test_helpers::TestDataFile error_rule("error_rule.lua", R"(
+        function match(data)
+            error("This is an intentional error!")
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("error_rule", error_rule.path().c_str(), &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("error_rule", adapter, result, &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_EmptyRules_Succeeds) {
+    RuleEngine engine;
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    std::string error;
+
+    EXPECT_TRUE(engine.match_all_rules(adapter, results, &error));
+    EXPECT_TRUE(results.empty());
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_PartialFailure_ReturnsFalse) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加一个正常规则
+    ASSERT_TRUE(engine.add_rule("pass", "test_data/rules/always_pass.lua", &error));
+
+    // 添加一个会失败的规则
+    test_helpers::TestDataFile error_rule("error_rule.lua", R"(
+        function match(data)
+            error("Intentional error")
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("fail", error_rule.path().c_str(), &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    EXPECT_FALSE(engine.match_all_rules(adapter, results, &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, GetRuleCount_EmptyEngine_ReturnsZero) {
+    RuleEngine engine;
+    EXPECT_EQ(engine.get_rule_count(), 0);
+}
+
+TEST_F(RuleEngineTest, HasRule_NonExistentRule_ReturnsFalse) {
+    RuleEngine engine;
+    EXPECT_FALSE(engine.has_rule("nonexistent_rule"));
+}
+
+TEST_F(RuleEngineTest, ClearRules_EmptyEngine_DoesNotCrash) {
+    RuleEngine engine;
+    engine.clear_rules(); // 不应该崩溃
+    EXPECT_EQ(engine.get_rule_count(), 0);
+}
+
+TEST_F(RuleEngineTest, ClearRules_NonEmptyEngine_ClearsAllRules) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/always_fail.lua", &error));
+    EXPECT_EQ(engine.get_rule_count(), 2);
+
+    engine.clear_rules();
+    EXPECT_EQ(engine.get_rule_count(), 0);
+    EXPECT_FALSE(engine.has_rule("rule1"));
+    EXPECT_FALSE(engine.has_rule("rule2"));
+}
+
+TEST_F(RuleEngineTest, GetRuleInfo_AfterOperations_IsCorrect) {
+    RuleEngine engine;
+    std::string error;
+
+    // 初始状态
+    auto rules = engine.get_all_rules();
+    EXPECT_TRUE(rules.empty());
+
+    // 添加规则后
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    rules = engine.get_all_rules();
+    EXPECT_EQ(rules.size(), 1);
+    EXPECT_EQ(rules[0].name, "rule1");
+
+    // 移除规则后
+    engine.remove_rule("rule1");
+    rules = engine.get_all_rules();
+    EXPECT_TRUE(rules.empty());
+
+    // 清空规则后
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/always_fail.lua", &error));
+    engine.clear_rules();
+    rules = engine.get_all_rules();
+    EXPECT_TRUE(rules.empty());
+}
+
+// ============================================================================
+// RuleEngine call_match_function 错误路径测试
+// ============================================================================
+
+// 用于测试的数据适配器：push_to_lua 总是失败
+class FailingDataAdapter : public DataAdapter {
+public:
+    bool push_to_lua(lua_State*, std::string* error_msg) const override {
+        if (error_msg) {
+            *error_msg = "DataAdapter intentionally failed";
+        }
+        return false;
+    }
+
+    const char* get_type_name() const override { return "FailingDataAdapter"; }
+};
+
+// 用于测试的 RuleEngine 派生类，允许访问内部 Lua 状态
+class RuleEngineInternalTest : public RuleEngine {
+public:
+    lua_State* get_internal_lua_state() {
+        return get_lua_state().get();
+    }
+
+    // 删除 _rule_functions 表
+    void delete_rule_functions_table() {
+        lua_State* L = get_internal_lua_state();
+        lua_pushnil(L);
+        lua_setglobal(L, "_rule_functions");
+    }
+
+    // 从 _rule_functions 表中删除指定规则的函数
+    void delete_rule_function(const std::string& rule_name) {
+        lua_State* L = get_internal_lua_state();
+        lua_getglobal(L, "_rule_functions");
+        if (lua_istable(L, -1)) {
+            lua_pushlstring(L, rule_name.data(), rule_name.size());
+            lua_pushnil(L);
+            lua_rawset(L, -3);
+        }
+        lua_pop(L, 1);
+    }
+
+    // 将 _rule_functions 表设置为非 table 值
+    void corrupt_rule_functions_table() {
+        lua_State* L = get_internal_lua_state();
+        lua_pushstring(L, "corrupted");
+        lua_setglobal(L, "_rule_functions");
+    }
+};
+
+TEST_F(RuleEngineTest, CallMatchFunction_RuleFunctionTableNotFound_ReturnsError) {
+    RuleEngineInternalTest engine;
+    std::string error;
+
+    // 添加一个正常规则
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    // 删除 _rule_functions 表
+    engine.delete_rule_functions_table();
+
+    // 尝试匹配规则
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
+    EXPECT_EQ(error, "Rule function table not found");
+}
+
+TEST_F(RuleEngineTest, CallMatchFunction_RuleFunctionTableCorrupted_ReturnsError) {
+    RuleEngineInternalTest engine;
+    std::string error;
+
+    // 添加一个正常规则
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    // 将 _rule_functions 表设置为非 table 值
+    engine.corrupt_rule_functions_table();
+
+    // 尝试匹配规则
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
+    EXPECT_EQ(error, "Rule function table not found");
+}
+
+TEST_F(RuleEngineTest, CallMatchFunction_MatchFunctionNotFound_ReturnsError) {
+    RuleEngineInternalTest engine;
+    std::string error;
+
+    // 添加一个正常规则
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    // 从 _rule_functions 表中删除该规则的函数
+    engine.delete_rule_function("rule1");
+
+    // 尝试匹配规则
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
+    EXPECT_EQ(error, "Rule 'rule1' match function not found");
+}
+
+TEST_F(RuleEngineTest, CallMatchFunction_DataAdapterPushFails_ReturnsError) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加一个正常规则
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    // 使用会失败的数据适配器
+    FailingDataAdapter adapter;
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
+    EXPECT_EQ(error, "DataAdapter intentionally failed");
+}
+
+TEST_F(RuleEngineTest, CallMatchFunction_FirstReturnValueNotBoolean_ReturnsError) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个返回非布尔值作为第一个返回值的规则
+    test_helpers::TestDataFile invalid_return_rule("invalid_return.lua", R"(
+        function match(data)
+            -- 第一个返回值是字符串而不是布尔值
+            return "invalid", "error message"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("bad_rule", invalid_return_rule.path().c_str(), &error));
+
+    // 尝试匹配规则
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("bad_rule", adapter, result, &error));
+    EXPECT_EQ(error, "First return value of 'match' must be boolean");
+}
+
+TEST_F(RuleEngineTest, CallMatchFunction_ReturnsNumberAsFirstValue_ReturnsError) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个返回数字作为第一个返回值的规则
+    test_helpers::TestDataFile number_return_rule("number_return.lua", R"(
+        function match(data)
+            -- 第一个返回值是数字
+            return 42, "error message"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("number_rule", number_return_rule.path().c_str(), &error));
+
+    // 尝试匹配规则
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("number_rule", adapter, result, &error));
+    EXPECT_EQ(error, "First return value of 'match' must be boolean");
+}
+
+TEST_F(RuleEngineTest, CallMatchFunction_ReturnsNilAsFirstValue_ReturnsError) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个返回 nil 作为第一个返回值的规则
+    test_helpers::TestDataFile nil_return_rule("nil_return.lua", R"(
+        function match(data)
+            -- 第一个返回值是 nil
+            return nil, "error message"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("nil_rule", nil_return_rule.path().c_str(), &error));
+
+    // 尝试匹配规则
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("nil_rule", adapter, result, &error));
+    EXPECT_EQ(error, "First return value of 'match' must be boolean");
+}
+
+TEST_F(RuleEngineTest, CallMatchFunction_ReturnsTableAsFirstValue_ReturnsError) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个返回 table 作为第一个返回值的规则
+    test_helpers::TestDataFile table_return_rule("table_return.lua", R"(
+        function match(data)
+            -- 第一个返回值是 table
+            return {result = true}, "error message"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("table_rule", table_return_rule.path().c_str(), &error));
+
+    // 尝试匹配规则
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("table_rule", adapter, result, &error));
+    EXPECT_EQ(error, "First return value of 'match' must be boolean");
+}
+
+TEST_F(RuleEngineTest, CallMatchFunction_OnlyOneReturnValue_WorksCorrectly) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个只返回一个值的规则（第二个返回值可选）
+    test_helpers::TestDataFile single_return_rule("single_return.lua", R"(
+        function match(data)
+            -- 只返回布尔值
+            return true
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("single_rule", single_return_rule.path().c_str(), &error));
+
+    // 尝试匹配规则（应该成功）
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    EXPECT_TRUE(engine.match_rule("single_rule", adapter, result, &error));
+    EXPECT_TRUE(error.empty());
+    EXPECT_TRUE(result.matched);
+    EXPECT_TRUE(result.message.empty());  // 没有第二个返回值，message 应该为空
 }
