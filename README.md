@@ -682,6 +682,7 @@ MIT License
 
 ## 文档
 
+- [架构文档 (ARCHITECTURE.md)](ARCHITECTURE.md) - 详细的系统架构设计、模块关系、数据流、设计模式和最佳实践
 - [变更日志 (CHANGELOG.md)](CHANGELOG.md) - 详细的版本变更记录
 - [测试指南 (TESTING.md)](TESTING.md) - 详细的测试说明、覆盖率报告生成、测试最佳实践
 - [覆盖率快速指南 (docs/COVERAGE_QUICKSTART.md)](docs/COVERAGE_QUICKSTART.md) - 快速查看覆盖率报告
