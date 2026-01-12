@@ -1439,3 +1439,325 @@ TEST_F(RuleEngineTest, CallMatchFunction_OnlyOneReturnValue_WorksCorrectly) {
     EXPECT_TRUE(result.matched);
     EXPECT_TRUE(result.message.empty());  // 没有第二个返回值，message 应该为空
 }
+
+// ============================================================================
+// RuleEngine JIT 控制测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, EnableJit_JitIsEnabled) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个简单规则
+    CreateRuleFile("simple_check.lua", R"(
+function match(data)
+    return data["value"] > 10, "value check"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("simple_check", "test_data/rules/simple_check.lua", &error));
+
+    // 启用 JIT
+    engine.enable_jit();
+
+    // 执行规则匹配
+    json data = {{"value", 15}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("simple_check", adapter, result, &error));
+
+    EXPECT_TRUE(result.matched);
+    EXPECT_STREQ(result.message.c_str(), "value check");
+}
+
+TEST_F(RuleEngineTest, DisableJit_JitIsDisabled) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个计算密集型规则
+    CreateRuleFile("compute_intensive.lua", R"(
+function match(data)
+    local sum = 0
+    for i = 1, 100 do
+        sum = sum + i
+    end
+    return sum == 5050, "computation complete"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("compute", "test_data/rules/compute_intensive.lua", &error));
+
+    // 禁用 JIT
+    engine.disable_jit();
+
+    // 执行规则匹配（应该仍然工作，只是没有 JIT 优化）
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("compute", adapter, result, &error));
+
+    EXPECT_TRUE(result.matched);
+    EXPECT_STREQ(result.message.c_str(), "computation complete");
+}
+
+TEST_F(RuleEngineTest, ToggleJit_MultipleTimes_WorksCorrectly) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个简单规则
+    CreateRuleFile("toggle_test.lua", R"(
+function match(data)
+    return data["status"] == "active", "status check"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("toggle_test", "test_data/rules/toggle_test.lua", &error));
+
+    json data = {{"status", "active"}};
+    JsonAdapter adapter(data);
+
+    // 测试启用 JIT
+    engine.enable_jit();
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("toggle_test", adapter, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // 测试禁用 JIT
+    engine.disable_jit();
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("toggle_test", adapter, result2, &error));
+    EXPECT_TRUE(result2.matched);
+
+    // 再次启用 JIT
+    engine.enable_jit();
+    MatchResult result3;
+    ASSERT_TRUE(engine.match_rule("toggle_test", adapter, result3, &error));
+    EXPECT_TRUE(result3.matched);
+
+    // 再次禁用 JIT
+    engine.disable_jit();
+    MatchResult result4;
+    ASSERT_TRUE(engine.match_rule("toggle_test", adapter, result4, &error));
+    EXPECT_TRUE(result4.matched);
+}
+
+TEST_F(RuleEngineTest, JitStatus_AffectsPerformance) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个循环密集型规则，用于观察 JIT 性能差异
+    CreateRuleFile("loop_test.lua", R"(
+function match(data)
+    local count = 0
+    for i = 1, 1000 do
+        count = count + 1
+    end
+    return count == 1000, "loop completed"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("loop_test", "test_data/rules/loop_test.lua", &error));
+
+    json data = {{"test", "data"}};
+    JsonAdapter adapter(data);
+
+    // 使用 JIT 执行
+    engine.enable_jit();
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("loop_test", adapter, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // 不使用 JIT 执行
+    engine.disable_jit();
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("loop_test", adapter, result2, &error));
+    EXPECT_TRUE(result2.matched);
+
+    // 两种方式都应该得到相同的结果
+    EXPECT_EQ(result1.matched, result2.matched);
+    EXPECT_STREQ(result1.message.c_str(), result2.message.c_str());
+}
+
+TEST_F(RuleEngineTest, EnableJit_MultipleRules_AllBenefit) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建多个规则
+    CreateRuleFile("rule1.lua", R"(
+function match(data)
+    return data["value1"] > 0, "rule1 check"
+end
+)");
+
+    CreateRuleFile("rule2.lua", R"(
+function match(data)
+    return data["value2"] > 0, "rule2 check"
+end
+)");
+
+    CreateRuleFile("rule3.lua", R"(
+function match(data)
+    return data["value3"] > 0, "rule3 check"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/rule1.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/rule2.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule3", "test_data/rules/rule3.lua", &error));
+
+    // 启用 JIT
+    engine.enable_jit();
+
+    // 批量匹配所有规则
+    json data = {
+        {"value1", 10},
+        {"value2", 20},
+        {"value3", 30}
+    };
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    ASSERT_TRUE(engine.match_all_rules(adapter, results, &error));
+
+    // 验证所有规则都通过
+    EXPECT_EQ(results.size(), 3);
+    EXPECT_TRUE(results.at("rule1").matched);
+    EXPECT_TRUE(results.at("rule2").matched);
+    EXPECT_TRUE(results.at("rule3").matched);
+}
+
+TEST_F(RuleEngineTest, DisableJit_MultipleRules_AllWork) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建多个规则
+    CreateRuleFile("rule1.lua", R"(
+function match(data)
+    return data["value1"] > 0, "rule1 check"
+end
+)");
+
+    CreateRuleFile("rule2.lua", R"(
+function match(data)
+    return data["value2"] < 100, "rule2 check"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/rule1.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/rule2.lua", &error));
+
+    // 禁用 JIT
+    engine.disable_jit();
+
+    // 批量匹配所有规则
+    json data = {
+        {"value1", 10},
+        {"value2", 50}
+    };
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    ASSERT_TRUE(engine.match_all_rules(adapter, results, &error));
+
+    // 验证所有规则都通过（即使没有 JIT）
+    EXPECT_EQ(results.size(), 2);
+    EXPECT_TRUE(results.at("rule1").matched);
+    EXPECT_TRUE(results.at("rule2").matched);
+}
+
+// ============================================================================
+// RuleEngine flush_jit 测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, FlushJit_ClearsJitCache) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("simple_check.lua", R"(
+function match(data)
+    return data["value"] > 10, "value check"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("simple_check", "test_data/rules/simple_check.lua", &error));
+
+    // 先执行一次规则，让 JIT 编译
+    json data = {{"value", 15}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("simple_check", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+
+    // 刷新 JIT 缓存
+    EXPECT_TRUE(engine.flush_jit());
+
+    // 刷新后仍然可以正常执行规则
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("simple_check", adapter, result2, &error));
+    EXPECT_TRUE(result2.matched);
+}
+
+TEST_F(RuleEngineTest, FlushJit_MultipleCalls_AllSucceed) {
+    RuleEngine engine;
+
+    // 多次调用 flush_jit 应该都能成功
+    EXPECT_TRUE(engine.flush_jit());
+    EXPECT_TRUE(engine.flush_jit());
+    EXPECT_TRUE(engine.flush_jit());
+}
+
+// ============================================================================
+// RuleEngine JIT 控制 - 无效 Lua 状态测试
+// ============================================================================
+
+// 测试辅助类：用于模拟无效 Lua 状态的 RuleEngine
+class RuleEngineWithInvalidState : public RuleEngine {
+public:
+    RuleEngineWithInvalidState() : RuleEngine() {
+        // 获取 LuaState 并将其置为无效状态
+        // 注意：这里我们通过移动语义"窃取"内部的 LuaState
+        // 然后让原来的 RuleEngine 持有空状态
+        _stolen_state = std::move(get_lua_state());
+    }
+
+    // 测试无效状态下的 JIT 控制方法
+    bool test_enable_jit_with_invalid_state() {
+        return enable_jit();
+    }
+
+    bool test_disable_jit_with_invalid_state() {
+        return disable_jit();
+    }
+
+    bool test_flush_jit_with_invalid_state() {
+        return flush_jit();
+    }
+
+private:
+    LuaState _stolen_state;
+};
+
+TEST_F(RuleEngineTest, EnableJit_InvalidState_ReturnsFalse) {
+    RuleEngineWithInvalidState engine;
+
+    // 当 Lua 状态无效时，enable_jit 应该返回 false
+    EXPECT_FALSE(engine.test_enable_jit_with_invalid_state());
+}
+
+TEST_F(RuleEngineTest, DisableJit_InvalidState_ReturnsFalse) {
+    RuleEngineWithInvalidState engine;
+
+    // 当 Lua 状态无效时，disable_jit 应该返回 false
+    EXPECT_FALSE(engine.test_disable_jit_with_invalid_state());
+}
+
+TEST_F(RuleEngineTest, FlushJit_InvalidState_ReturnsFalse) {
+    RuleEngineWithInvalidState engine;
+
+    // 当 Lua 状态无效时，flush_jit 应该返回 false
+    EXPECT_FALSE(engine.test_flush_jit_with_invalid_state());
+}
+

@@ -75,21 +75,6 @@ target_link_libraries(scaling_benchmark PRIVATE
     benchmark_common
 )
 
-# 性能分析工具
-add_executable(analyze_ultra_complex
-    analyze_ultra_complex.cpp
-)
-
-target_link_libraries(analyze_ultra_complex PRIVATE
-    ljre::ljre
-)
-
-target_include_directories(analyze_ultra_complex PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${LUAJIT_ROOT}/include/luajit-2.1
-    ${JSON_ROOT}
-)
-
 # 创建 results 目录
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/benchmarks/results)
 

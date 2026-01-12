@@ -51,10 +51,10 @@ ctest --rerun-failed --output-on-failure
 |---------|---------|-----------|------|
 | `lua_state_test.cpp` | Lua 状态管理 | 52 | ✅ 全部通过 |
 | `lua_stack_guard_test.cpp` | Lua 栈守卫 | 17 | ✅ 全部通过 |
-| `data_adapter_test.cpp` | 数据适配器 | 46 | ✅ 全部通过 |
-| `rule_engine_test.cpp` | 规则引擎 | 78 | ✅ 全部通过 |
-| `integration_test.cpp` | 集成测试 | 11 | ✅ 全部通过 |
-| **总计** | | **204** | **✅ 100% 通过** |
+| `data_adapter_test.cpp` | 数据适配器 | 55 | ✅ 全部通过 |
+| `rule_engine_test.cpp` | 规则引擎 | 89 | ✅ 全部通过 |
+| `integration_test.cpp` | 集成测试 | 15 | ✅ 全部通过 |
+| **总计** | | **228** | **✅ 100% 通过** |
 
 ### 测试分类
 
@@ -70,7 +70,7 @@ ctest --rerun-failed --output-on-failure
 - 边界条件测试
 - JIT 控制测试（enable/disable/flush 及各种组合场景）
 
-**lua_stack_guard_test.cpp** - LuaStackGuard 类测试
+**lua_stack_guard_test.cpp** - LuaStackGuard 类测试 (17个测试用例)
 - 基本栈恢复测试
 - 多次 push/pop 测试
 - 嵌套守卫测试
@@ -80,7 +80,7 @@ ctest --rerun-failed --output-on-failure
 - 表迭代场景测试
 - 错误处理场景测试
 
-**data_adapter_test.cpp** - JsonAdapter 类测试 (46个测试用例)
+**data_adapter_test.cpp** - JsonAdapter 类测试 (55个测试用例)
 - 基本类型转换（null, boolean, number, string）
 - 数组转换测试
 - 对象转换测试
@@ -89,10 +89,16 @@ ctest --rerun-failed --output-on-failure
 - 错误处理测试（包括异常捕获和错误传播）
 - 边界条件测试（深度嵌套、大量数据、混合类型）
 - 栈平衡测试
+- **深度嵌套限制测试** (9个测试用例)
+  - 默认深度值测试（MAX_NESTING_DEPTH = 8192）
+  - 深度设置和边界测试（最小值 1，最大值 8192）
+  - 深度超限截断测试（对象和数组）
+  - 浅层嵌套完整转换测试
+  - 深层数组嵌套截断测试
 
 #### 2. 集成测试 (Integration Tests)
 
-**rule_engine_test.cpp** - 规则引擎集成测试 (78个测试用例)
+**rule_engine_test.cpp** - 规则引擎集成测试 (89个测试用例)
 - 规则加载和卸载
 - 规则匹配（单个和批量）
 - 规则热更新
@@ -100,13 +106,27 @@ ctest --rerun-failed --output-on-failure
 - 批量规则处理（使用 `std::map` 返回结果）
 - 错误场景处理（包括 Lua 状态无效、规则函数表不存在等）
 - call_match_function 错误路径完整覆盖
+- **JIT 控制测试** (11个测试用例)
+  - enable_jit/disable_jit/flush_jit 功能测试
+  - JIT 状态切换测试（多次切换）
+  - JIT 性能影响测试（验证结果一致性）
+  - 多规则 JIT 控制测试
+  - **无效 Lua 状态下的 JIT 控制测试** (3个测试用例)
+    - enable_jit 在无效状态下返回 false
+    - disable_jit 在无效状态下返回 false
+    - flush_jit 在无效状态下返回 false
 
-**integration_test.cpp** - 端到端场景测试
+**integration_test.cpp** - 端到端场景测试 (15个测试用例)
 - 用户注册验证
 - 规则动态管理
 - 多引擎独立运行
 - 复杂数据结构处理
 - 大数据集处理
+- **深度嵌套限制集成测试** (4个测试用例)
+  - 深层对象嵌套截断测试
+  - 深层数组嵌套截断测试
+  - 安全访问模式测试（and 短路、pcall、逐层检查）
+  - 深度限制下的规则执行测试
 
 **重要说明**: `match_all_rules` 接口返回 `std::map<std::string, MatchResult>`，键为规则名，值为匹配结果。
 

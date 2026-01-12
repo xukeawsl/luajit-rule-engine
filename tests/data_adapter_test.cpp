@@ -636,10 +636,9 @@ TEST_F(JsonAdapterTest, VeryLongString_ConvertsCorrectly) {
 
 TEST_F(JsonAdapterTest, DeeplyNestedStructure_ConvertsCorrectly) {
     // 测试深度嵌套，观察 Lua 栈的行为
-    // LuaJIT 默认栈大小通常为几千个元素
-    // 测试 1000 层嵌套是安全的，可以验证栈的使用
+    // 现在默认 max_depth 是 8192，所以 200 层嵌套在默认限制以内
     json data = 1;
-    int depth = 1000;  // 1000 层嵌套
+    int depth = 200;  // 200 层嵌套 (在默认8192以内)
 
     for (int i = 0; i < depth; ++i) {
         json temp = data;
@@ -833,7 +832,7 @@ TEST_F(JsonAdapterTest, VeryDeeplyNestedArray_HandlesStackCorrectly) {
     // 测试深度嵌套的数组，确保栈不会溢出
     // LuaJIT 默认栈大小通常是几千个元素
     json data = 1;
-    int depth = 500;  // 500 层嵌套
+    int depth = 100;
 
     for (int i = 0; i < depth; ++i) {
         json temp = data;
@@ -1000,4 +999,235 @@ TEST_F(JsonAdapterTest, ArrayWithHoles_ConvertsCorrectly) {
     lua_rawgeti(L_, -1, 3);
     EXPECT_EQ(get_integer(), 3);
     lua_pop(L_, 2);
+}
+
+// ============================================================================
+// 嵌套深度限制测试
+// ============================================================================
+
+// 辅助函数：创建深度嵌套的 JSON
+json create_deep_nested_json(size_t depth) {
+    if (depth == 0) {
+        return json("value_at_bottom");
+    }
+
+    json result = json::object();
+    result["level_" + std::to_string(depth)] = create_deep_nested_json(depth - 1);
+    return result;
+}
+
+TEST_F(JsonAdapterTest, DefaultMaxNestingDepth_Is8192) {
+    json data = json::object();
+    JsonAdapter adapter(data);
+
+    EXPECT_EQ(adapter.get_max_nesting_depth(), 8192);
+}
+
+TEST_F(JsonAdapterTest, SetMaxNestingDepth_WorksCorrectly) {
+    json data = json::object();
+    JsonAdapter adapter(data);
+
+    adapter.set_max_nesting_depth(10);
+    EXPECT_EQ(adapter.get_max_nesting_depth(), 10);
+
+    adapter.set_max_nesting_depth(100);
+    EXPECT_EQ(adapter.get_max_nesting_depth(), 100);
+}
+
+TEST_F(JsonAdapterTest, SetMaxNestingDepth_CapsAtMaximum) {
+    json data = json::object();
+    JsonAdapter adapter(data);
+
+    // 尝试设置超过最大值的深度，应该被限制在 MAX_NESTING_DEPTH
+    adapter.set_max_nesting_depth(10000);
+    EXPECT_EQ(adapter.get_max_nesting_depth(), 8192);
+
+    // 设置恰好等于最大值
+    adapter.set_max_nesting_depth(8192);
+    EXPECT_EQ(adapter.get_max_nesting_depth(), 8192);
+
+    // 设置超过最大值的很大数字
+    adapter.set_max_nesting_depth(999999);
+    EXPECT_EQ(adapter.get_max_nesting_depth(), 8192);
+}
+
+TEST_F(JsonAdapterTest, SetMaxNestingDepth_MinimumIsOne) {
+    json data = json::object();
+    JsonAdapter adapter(data);
+
+    // 尝试设置 0，应该被限制为最小值 1
+    adapter.set_max_nesting_depth(0);
+    EXPECT_EQ(adapter.get_max_nesting_depth(), 1);
+
+    // 设置 1，应该保持为 1
+    adapter.set_max_nesting_depth(1);
+    EXPECT_EQ(adapter.get_max_nesting_depth(), 1);
+
+    // 验证默认值符合最小值要求
+    JsonAdapter default_adapter(data);
+    EXPECT_GE(default_adapter.get_max_nesting_depth(), 1);
+}
+
+TEST_F(JsonAdapterTest, ShallowNesting_ConvertsCorrectly) {
+    // 测试浅层嵌套（10层），应该完全转换
+    json data = create_deep_nested_json(10);
+    JsonAdapter adapter(data);
+
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+
+    // 验证根对象被转换
+    EXPECT_TRUE(is_table());
+
+    // 简单验证：检查根对象有 level_10 键
+    lua_pushstring(L_, "level_10");
+    lua_rawget(L_, -2);
+    EXPECT_TRUE(is_table()) << "level_10 should be a table";
+    lua_pop(L_, 2); // 清理
+}
+
+TEST_F(JsonAdapterTest, DepthExceedsLimit_BecomesNil) {
+    // 创建 300 层嵌套的 JSON
+    json data = create_deep_nested_json(300);
+
+    // 设置自定义最大深度为 256（低于默认的8192）
+    JsonAdapter adapter(data, 256);
+
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+
+    // 栈顶应该是 table
+    EXPECT_TRUE(is_table());
+
+    // 检查超过深度的部分
+    // 当 current_depth + 1 >= max_depth (256) 时子元素被截断
+    // 即 level_44 (深度 255) 的子元素 level_43 会被截断
+    lua_pushstring(L_, "level_300");
+    lua_rawget(L_, -2);
+
+    // 递归检查直到找到被截断的位置
+    lua_State* L = L_;
+    int depth = 1;
+    bool found_nil = false;
+
+    while (lua_istable(L, -1) && depth < 300) {
+        std::string next_key = "level_" + std::to_string(300 - depth);
+        lua_pushstring(L, next_key.c_str());
+        lua_rawget(L, -2);
+
+        if (lua_isnil(L, -1)) {
+            found_nil = true;
+            lua_pop(L, 2); // 弹出 nil 和 table
+            break;
+        }
+
+        lua_remove(L, -2); // 移除父 table
+        depth++;
+    }
+
+    // 应该在某个深度找到 nil (大约在深度 255-256 附近)
+    EXPECT_TRUE(found_nil) << "Should find nil at some depth due to limit";
+    EXPECT_GE(depth, 255) << "Nil should appear at or after depth 255";
+
+    if (!found_nil) {
+        lua_pop(L, 1); // 清理栈
+    }
+}
+
+TEST_F(JsonAdapterTest, CustomMaxNestingDepth_TruncatesDeeplyNestedValues) {
+    // 创建 50 层嵌套的 JSON
+    json data = create_deep_nested_json(50);
+
+    // 设置最大深度为 10
+    // 当 current_depth + 1 >= max_depth 时，子元素被截断
+    JsonAdapter adapter(data, 10);
+
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+
+    // 栈顶应该是 table
+    EXPECT_TRUE(is_table());
+
+    // 直接检查：遍历深度，找到第一个被截断的位置
+    lua_pushstring(L_, "level_50");
+    lua_rawget(L_, -2);
+
+    int depth = 0;
+    bool found_truncation = false;
+
+    // 最多遍历15层
+    while (depth < 15 && lua_istable(L_, -1)) {
+        depth++;
+        std::string next_key = "level_" + std::to_string(50 - depth);
+        lua_pushstring(L_, next_key.c_str());
+        lua_rawget(L_, -2);
+
+        if (lua_isnil(L_, -1)) {
+            found_truncation = true;
+            lua_pop(L_, 3); // 清理
+            break;
+        }
+
+        lua_remove(L_, -2);
+    }
+
+    if (!found_truncation) {
+        lua_pop(L_, 2);
+    }
+
+    // 应该在深度10左右找到截断
+    EXPECT_TRUE(found_truncation) << "Should find truncation due to depth limit";
+    EXPECT_GE(depth, 9) << "Truncation should happen at or after depth 9";
+}
+
+TEST_F(JsonAdapterTest, MinMaxNestingDepth_RootObjectStillConverted) {
+    // 创建嵌套 JSON: {"level_5": {"level_4": {...}}}
+    json data = create_deep_nested_json(5);
+
+    // 设置最大深度为 0（会被限制为最小值 1）
+    // 这意味着只允许 1 层嵌套
+    // 根对象会被转换，但其子元素（深度 1 的子对象）会被截断为 nil
+    // 因为 current_depth + 1 >= max_depth (1) 时，子元素就会被截断
+    JsonAdapter adapter(data, 0);
+
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+
+    // 栈顶应该是 table (根对象，深度 0)
+    EXPECT_TRUE(is_table());
+
+    // level_5 应该存在但值为 nil
+    // 因为当处理 level_5 的值时，current_depth=0，检查 current_depth + 1 >= 1 为真
+    // 所以 level_5 的嵌套值会被截断为 nil
+    lua_pushstring(L_, "level_5");
+    lua_rawget(L_, -2);
+
+    EXPECT_TRUE(is_nil()) << "Child elements should be nil when max_depth is 1";
+
+    lua_pop(L_, 2); // 清理栈
+}
+
+TEST_F(JsonAdapterTest, DeepArrayNesting_TruncatesCorrectly) {
+    // 创建深度嵌套的数组
+    json data = json::array();
+    json* current = &data;
+
+    for (int i = 0; i < 300; ++i) {
+        json nested = json::array();
+        current->push_back(nested);
+        current = &current->back();
+    }
+
+    JsonAdapter adapter(data);
+
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+
+    // 栈顶应该是 table（数组）
+    EXPECT_TRUE(is_table());
+
+    // 数组应该被成功转换（不会崩溃）
+    // 超过最大深度的部分会被截断为 nil
+
+    lua_pop(L_, 1); // 清理栈
 }

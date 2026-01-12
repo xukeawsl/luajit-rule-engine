@@ -21,8 +21,7 @@ int main() {
     // 显示所有规则
     auto rules = engine.get_all_rules();
     for (const auto& rule : rules) {
-        std::cout << "  - " << rule.name << " (" << rule.file_path << ")"
-                  << (rule.loaded ? " [已加载]" : " [未加载]") << std::endl;
+        std::cout << "  - " << rule.name << " (" << rule.file_path << ")" << std::endl;
     }
 
     std::cout << std::endl;

@@ -657,3 +657,321 @@ end
 
     EXPECT_FALSE(engine.match_all_rules(adapter3, results3, &error));
 }
+
+// ============================================================================
+// 嵌套深度限制集成测试
+// ============================================================================
+
+TEST_F(IntegrationTest, NestedDepthLimit_DeeplyNestedDataTruncatesCorrectly) {
+    // 创建规则引擎
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个规则，用于测试深度嵌套数据的访问
+    CreateRuleFile("nested_depth_check.lua", R"(
+function match(data)
+    -- 检查第1层（应该存在）
+    if data["level1"] == nil then
+        return false, "第1层数据丢失"
+    end
+
+    -- 检查第2层（应该存在）
+    if data["level1"]["level2"] == nil then
+        return false, "第2层数据丢失"
+    end
+
+    -- 检查第3层（应该存在）
+    if data["level1"]["level2"]["level3"] == nil then
+        return false, "第3层数据丢失"
+    end
+
+    -- 检查第4层（应该是 nil，因为超出了深度限制）
+    if data["level1"]["level2"]["level3"]["level4"] ~= nil then
+        return false, "第4层数据应该被截断为nil"
+    end
+
+    return true, "深度限制验证通过"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("nested_depth_check", "test_data/rules/nested_depth_check.lua", &error));
+
+    // 创建4层嵌套的JSON数据
+    // 结构：{"level1": {"level2": {"level3": {"level4": "deep_value"}}}}
+    json nested_data = {
+        {"level1", {
+            {"level2", {
+                {"level3", {
+                    {"level4", "deep_value"}
+                }}
+            }}
+        }}
+    };
+
+    // 使用最大嵌套深度为4的 JsonAdapter
+    // 这意味着：根对象(深度0) -> level1(深度1) -> level2(深度2) -> level3(深度3) -> level4(深度4)
+    // 当 max_depth=4 时，处理 level3 的值时（current_depth=3），检查 current_depth + 1 >= 4 为真
+    // 所以 level3 的子元素 level4 会被截断为 nil
+    JsonAdapter adapter(nested_data, 4);
+
+    // 执行规则
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("nested_depth_check", adapter, result, &error));
+
+    // 规则应该通过，因为超出的深度访问到了 nil
+    EXPECT_TRUE(result.matched) << "规则验证失败: " << result.message;
+    EXPECT_STREQ(result.message.c_str(), "深度限制验证通过");
+}
+
+TEST_F(IntegrationTest, NestedDepthLimit_ArrayWithinObjectTruncatesCorrectly) {
+    // 测试嵌套数组中的深度限制
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("array_nested_depth_check.lua", R"(
+function match(data)
+    -- 检查根层的 user 字段
+    if data["user"] == nil then
+        return false, "user字段不存在"
+    end
+
+    -- 检查 user.name（第2层）
+    if data["user"]["name"] == nil then
+        return false, "name字段不存在"
+    end
+
+    -- 检查 user.profile（第2层）
+    if data["user"]["profile"] == nil then
+        return false, "profile字段不存在"
+    end
+
+    -- 检查 user.profile.settings（第3层，应该存在）
+    if data["user"]["profile"]["settings"] == nil then
+        return false, "settings字段不存在"
+    end
+
+    -- 检查 user.profile.settings.theme（第4层，应该为nil）
+    if data["user"]["profile"]["settings"]["theme"] ~= nil then
+        return false, "theme应该被截断为nil"
+    end
+
+    -- 检查数组元素中的深层嵌套
+    if data["user"]["orders"] == nil then
+        return false, "orders数组不存在"
+    end
+
+    -- orders 数组存在，数组元素也存在
+    if data["user"]["orders"][1] == nil then
+        return false, "orders数组元素不存在"
+    end
+
+    -- 但数组元素的字段（第5层）应该被截断为nil
+    if data["user"]["orders"][1]["id"] ~= nil then
+        return false, "orders数组元素的id字段应该被截断为nil"
+    end
+
+    if data["user"]["orders"][1]["amount"] ~= nil then
+        return false, "orders数组元素的amount字段应该被截断为nil"
+    end
+
+    return true, "数组嵌套深度限制验证通过"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("array_nested_depth_check", "test_data/rules/array_nested_depth_check.lua", &error));
+
+    // 创建包含数组的嵌套JSON（4层）
+    // 结构：
+    // {
+    //   "user": {
+    //     "name": "Alice",                    // 第2层
+    //     "profile": {
+    //       "settings": {"theme": "dark"}     // 第4层
+    //     },
+    //     "orders": [
+    //       {"id": 1, "amount": 100}          // 第4层
+    //     ]
+    //   }
+    // }
+    json data = {
+        {"user", {
+            {"name", "Alice"},
+            {"profile", {
+                {"settings", {
+                    {"theme", "dark"}
+                }}
+            }},
+            {"orders", {
+                {{"id", 1}, {"amount", 100}},
+                {{"id", 2}, {"amount", 200}}
+            }}
+        }}
+    };
+
+    // 限制最大深度为4
+    JsonAdapter adapter(data, 4);
+
+    // 执行规则
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("array_nested_depth_check", adapter, result, &error));
+
+    // 规则应该通过
+    EXPECT_TRUE(result.matched) << "规则验证失败: " << result.message;
+    EXPECT_STREQ(result.message.c_str(), "数组嵌套深度限制验证通过");
+}
+
+TEST_F(IntegrationTest, NestedDepthLimit_SafeAccessPattern) {
+    // 测试在深度限制场景下如何安全地访问嵌套数据
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("safe_access_pattern.lua", R"(
+function match(data)
+    -- 4层嵌套结构，限制深度为2
+    -- 结构：{"level1": {"level2": {"level3": {"level4": "value"}}}}
+
+    -- 方式1：直接访问 level3 会报错（因为 level2 是 nil）
+    -- data["level1"]["level2"]["level3"]  -- 这会报错！
+
+    -- 方式2：使用 and 短路求值安全访问
+    local level3 = data["level1"] and data["level1"]["level2"] and data["level1"]["level2"]["level3"]
+    if level3 ~= nil then
+        return false, "level3应该为nil"
+    end
+
+    -- 方式3：逐层检查
+    local level1 = data["level1"]
+    if level1 == nil then
+        return false, "level1不应该为nil"
+    end
+
+    local level2 = level1["level2"]
+    if level2 == nil then
+        -- level2 被截断为 nil，这是预期的
+        -- 不能再访问 level2["level3"]，否则会报错
+    else
+        return false, "level2应该为nil"
+    end
+
+    -- 方式4：使用 pcall 捕获错误（不推荐，性能较差）
+    local ok, value = pcall(function()
+        return data["level1"]["level2"]["level3"]
+    end)
+    if ok then
+        -- 如果没有报错，说明能访问到（不应该发生）
+        return false, "访问level3应该失败"
+    end
+    -- err 包含错误信息，这是预期的
+
+    return true, "安全访问模式验证通过"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("safe_access_pattern", "test_data/rules/safe_access_pattern.lua", &error));
+
+    // 创建4层嵌套的JSON数据
+    json nested_data = {
+        {"level1", {
+            {"level2", {
+                {"level3", {
+                    {"level4", "deep_value"}
+                }}
+            }}
+        }}
+    };
+
+    // 限制最大深度为2
+    // level1 存在，level2 被截断为 nil
+    JsonAdapter adapter(nested_data, 2);
+
+    // 执行规则
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("safe_access_pattern", adapter, result, &error));
+
+    // 规则应该通过
+    EXPECT_TRUE(result.matched) << "规则验证失败: " << result.message;
+    EXPECT_STREQ(result.message.c_str(), "安全访问模式验证通过");
+}
+
+TEST_F(IntegrationTest, NestedDepthLimit_ArraySafeAccessPattern) {
+    // 测试数组嵌套在深度限制场景下的安全访问
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("array_safe_access.lua", R"(
+function match(data)
+    -- 4层数组嵌套结构，限制深度为2
+    -- 结构：{"items": [[[[1, 2, 3]]]]}
+    -- items 是数组，items[1] 是数组，items[1][1] 是数组，items[1][1][1] 是数字
+
+    -- 方式1：直接深层访问会报错（因为中间层被截断为 nil）
+    -- data["items"][1][1][1]  -- 这会报错！
+
+    -- 方式2：使用 and 短路求值安全访问数组
+    local value = data["items"] and data["items"][1] and data["items"][1][1] and data["items"][1][1][1]
+    if value ~= nil then
+        return false, "深层元素应该为nil"
+    end
+
+    -- 方式3：逐层检查数组
+    local items = data["items"]
+    if items == nil then
+        return false, "items数组不应该为nil"
+    end
+
+    -- items 数组存在（深度2）
+    -- 但数组元素（深度3）被截断为 nil
+    local level1 = items[1]
+    if level1 ~= nil then
+        return false, "第一层数组元素应该为nil"
+    end
+
+    -- 方式4：检查数组类型
+    if type(items) ~= "table" then
+        return false, "items应该是table"
+    end
+
+    -- 数组本身存在，但元素都被设置为 nil
+    -- 在深度限制 max_depth=2 下，处理 items 数组时 current_depth=1
+    -- 检查 current_depth + 1 >= 2，即 2 >= 2 为真
+    -- 所以数组元素全部被设置为 nil
+    -- ipairs 在遇到 nil 时会停止，所以我们用 rawget 手动检查
+    local element = rawget(items, 1)
+    if element ~= nil then
+        return false, "数组元素[1]应该为nil"
+    end
+
+    -- 检查确实设置了元素（虽然值为nil）
+    -- 使用 # 操作符获取数组长度
+    local len = #items
+    -- 长度可能为0，因为所有元素都是nil
+
+    return true, "数组安全访问模式验证通过"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("array_safe_access", "test_data/rules/array_safe_access.lua", &error));
+
+    // 创建4层数组嵌套的JSON数据
+    // 结构：{"items": [[[[1, 2, 3]]]]}
+    // items 是数组，items[0] 是数组，items[0][0] 是数组，items[0][0][0] 是数组
+    json array_data = {
+        {"items", {
+            {{{{1, 2, 3}}}}
+        }}
+    };
+
+    // 限制最大深度为2
+    // items 存在（深度1），items[1] 存在（深度2）
+    // items[1][1] 被截断为 nil（深度3）
+    JsonAdapter adapter(array_data, 2);
+
+    // 执行规则
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("array_safe_access", adapter, result, &error));
+
+    // 规则应该通过
+    EXPECT_TRUE(result.matched) << "规则验证失败: " << result.message;
+    EXPECT_STREQ(result.message.c_str(), "数组安全访问模式验证通过");
+}
+
