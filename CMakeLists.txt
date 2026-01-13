@@ -11,9 +11,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# 构建所有选项（用于线下测试）
+option(BUILD_ALL "Build all components (testing, examples, benchmarks, coverage)" OFF)
+
 # 覆盖率选项
 option(BUILD_COVERAGE "Build with coverage reporting" OFF)
-if(BUILD_COVERAGE)
+if(BUILD_ALL OR BUILD_COVERAGE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         add_compile_options(--coverage)
         add_link_options(--coverage)
@@ -90,19 +93,19 @@ install(FILES
 
 # 启用测试
 option(BUILD_TESTING "Build tests" OFF)
-if(BUILD_TESTING)
+if(BUILD_ALL OR BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
 # 启用示例
 option(BUILD_EXAMPLES "Build examples" OFF)
-if(BUILD_EXAMPLES)
+if(BUILD_ALL OR BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
 # 启用性能测试
 option(BUILD_BENCHMARKS "Build benchmarks" OFF)
-if(BUILD_BENCHMARKS)
+if(BUILD_ALL OR BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()

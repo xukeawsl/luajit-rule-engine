@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <map>
+#include <set>
 #include <memory>
 #include <vector>
 
@@ -59,10 +60,16 @@ public:
     bool match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
                     MatchResult& result, std::string* error_msg = nullptr);
 
-    // 检查所有规则是否匹配
+    // 检查多个规则是否匹配
     // results 存储 {规则名: 匹配结果} 的映射，按规则名字母顺序排序
     // 返回值: true 表示至少有一个规则匹配成功，false 表示所有规则都失败
     // 注意：即使某个规则调用失败，也会将其结果添加到 results 中
+    bool match_rule(const std::vector<std::string>& rule_names,
+                    const DataAdapter& data_adapter,
+                    std::map<std::string, MatchResult>& results,
+                    std::string* error_msg = nullptr);
+
+    // 检查所有规则是否匹配
     bool match_all_rules(const DataAdapter& data_adapter,
                          std::map<std::string, MatchResult>& results,
                          std::string* error_msg = nullptr);

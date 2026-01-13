@@ -99,10 +99,16 @@ make -j$(nproc)
 cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3 -DBUILD_EXAMPLES=ON
 make -j$(nproc)
 
-# 同时编译所有内容
+# 编译所有内容（测试、示例、性能测试、覆盖率）
+cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3 -DBUILD_ALL=ON
+make -j$(nproc)
+
+# 同时编译所有内容（与 BUILD_ALL=ON 效果相同）
 cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3 \
+         -DBUILD_TESTING=ON \
+         -DBUILD_EXAMPLES=ON \
          -DBUILD_BENCHMARKS=ON \
-         -DBUILD_EXAMPLES=ON
+         -DBUILD_COVERAGE=ON
 make -j$(nproc)
 ```
 
@@ -271,7 +277,7 @@ tests/
 │   ├── 边界条件测试
 │   ├── 栈平衡测试
 │   └── 深度嵌套限制测试（9个测试用例）
-├── rule_engine_test.cpp        # 规则引擎测试（97个测试用例）
+├── rule_engine_test.cpp        # 规则引擎测试（103个测试用例）
 │   ├── 规则加载和卸载测试
 │   ├── 规则匹配测试（单个和批量）
 │   ├── 规则热更新测试
@@ -292,6 +298,13 @@ tests/
 │   │   ├── 第二个返回值不是字符串场景测试
 │   │   ├── 混合错误场景测试
 │   │   └── 只有错误场景测试
+│   ├── match_rule (vector版本) 测试（6个测试用例）
+│   │   ├── 所有规则都存在且通过
+│   │   ├── 部分规则不存在
+│   │   ├── 所有规则都不存在
+│   │   ├── 空规则列表
+│   │   ├── 混合存在和不存在的规则
+│   │   └── 只请求不存在的规则
 │   └── 深度限制集成测试（4个测试用例）
 └── integration_test.cpp        # 集成测试（15个测试用例）
     ├── 端到端工作流测试
@@ -303,9 +316,9 @@ tests/
 - lua_state_test: 52 个测试用例
 - lua_stack_guard_test: 17 个测试用例
 - data_adapter_test: 55 个测试用例（+9 深度限制测试）
-- rule_engine_test: 97 个测试用例（+11 JIT 控制测试、+7 边界情况测试）
+- rule_engine_test: 103 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试）
 - integration_test: 15 个测试用例（+4 深度限制集成测试）
-- **总计**: 236 个测试用例，100% 通过
+- **总计**: 242 个测试用例，100% 通过
 
 ### 测试覆盖率目标
 
@@ -688,6 +701,24 @@ bool match_rule(const std::string& rule_name,
                 MatchResult& result,
                 std::string* error_msg = nullptr);
 ```
+
+#### 匹配多个指定规则
+```cpp
+bool match_rule(const std::vector<std::string>& rule_names,
+                const DataAdapter& data_adapter,
+                std::map<std::string, MatchResult>& results,
+                std::string* error_msg = nullptr);
+```
+返回的 `results` 是一个 `std::map`，键为规则名，值为匹配结果，按规则名字母顺序排序。
+
+**返回值**：
+- `true`: 至少有一个规则匹配成功
+- `false`: 所有规则都匹配失败
+
+**注意**：
+- 如果 `rule_names` 中包含未添加的规则，该规则会被添加到 `results` 中，`matched = false`，`message` 包含 "not found" 信息
+- 即使某个规则调用失败（如抛出异常），也会将其结果添加到 `results` 中，并设置 `matched = false` 和相应的错误信息
+- 函数会继续处理其他规则，不会因为某个规则失败而提前返回
 
 #### 匹配所有规则
 ```cpp

@@ -191,9 +191,10 @@ bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& dat
     return call_match_function(rule_name, data_adapter, result, error_msg);
 }
 
-bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
-                                 std::map<std::string, MatchResult>& results,
-                                 std::string* error_msg) {
+bool RuleEngine::match_rule(const std::vector<std::string>& rule_names,
+                             const DataAdapter& data_adapter,
+                             std::map<std::string, MatchResult>& results,
+                             std::string* error_msg) {
     if (!_lua_state.is_valid()) {
         if (error_msg) {
             *error_msg = "Lua state is invalid";
@@ -203,15 +204,18 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
 
     results.clear();
 
-    // 如果没有任何规则，直接返回 true
-    if (_rules.empty()) {
+    // 如果规则列表为空, 直接返回 true
+    if (rule_names.empty()) {
         return true;
     }
+
+    // 规则去重
+    std::set<std::string> unique_rules(rule_names.begin(), rule_names.end());
 
     lua_State* L = _lua_state.get();
     LuaStackGuard guard(L);  // 自动管理栈平衡
 
-    // 优化：只转换一次数据，将 Lua table 保留在栈上
+    // 将数据压入栈顶
     if (!data_adapter.push_to_lua(L, error_msg)) {
         return false;
     }
@@ -220,7 +224,16 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
     int data_table_index = lua_gettop(L);
 
     bool any_matched = false;
-    for (const auto& pair : _rules) {
+    for (const auto& rule_name : unique_rules) {
+        if (has_rule(rule_name) == false) {
+            // 规则不存在，记录错误并继续
+            MatchResult result;
+            result.matched = false;
+            result.message = "Rule '" + rule_name + "' not found";
+            results[rule_name] = result;
+            continue;
+        }
+
         // 获取规则函数
         lua_getglobal(L, "_rule_functions");
         if (!lua_istable(L, -1)) {
@@ -228,12 +241,12 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
             MatchResult result;
             result.matched = false;
             result.message = "Rule function table not found";
-            results[pair.first] = result;
+            results[rule_name] = result;
             lua_pop(L, 1);  // 清理栈
             continue;
         }
 
-        lua_pushlstring(L, pair.first.data(), pair.first.size());
+        lua_pushlstring(L, rule_name.data(), rule_name.size());
         lua_rawget(L, -2);  // 获取 _rule_functions[rule_name]
         lua_remove(L, -2);  // 移除 _rule_functions 表
 
@@ -241,8 +254,8 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
             // 如果函数不存在，记录错误并继续
             MatchResult result;
             result.matched = false;
-            result.message = "Rule '" + pair.first + "' match function not found";
-            results[pair.first] = result;
+            result.message = "Rule '" + rule_name + "' match function not found";
+            results[rule_name] = result;
             lua_pop(L, 1);  // 清理栈
             continue;
         }
@@ -256,7 +269,7 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
             MatchResult result;
             result.matched = false;
             result.message = "Failed to call match: " + _lua_state.get_error_string();
-            results[pair.first] = result;
+            results[rule_name] = result;
             lua_pop(L, 2);  // 清理返回值
             continue;
         }
@@ -278,7 +291,7 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
         }
 
         lua_pop(L, 2);  // 清理返回值
-        results[pair.first] = result;
+        results[rule_name] = result;
 
         if (result.matched) {
             any_matched = true;
@@ -286,6 +299,19 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
     }
 
     return any_matched;
+}
+
+bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
+                                 std::map<std::string, MatchResult>& results,
+                                 std::string* error_msg) {
+    std::vector<std::string> rule_names;
+    rule_names.reserve(_rules.size());
+
+    for (const auto& [rule_name, _] : _rules) {
+        rule_names.push_back(rule_name);
+    }
+
+    return match_rule(rule_names, data_adapter, results, error_msg);
 }
 
 std::vector<RuleInfo> RuleEngine::get_all_rules() const {

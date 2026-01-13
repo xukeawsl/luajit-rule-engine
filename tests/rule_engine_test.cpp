@@ -2087,3 +2087,172 @@ TEST_F(RuleEngineTest, MatchAllRules_OnlyErrors_ReturnsFalse) {
     EXPECT_FALSE(results.at("invalid2").matched);
 }
 
+// ============================================================================
+// RuleEngine match_rule (vector version) 测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, MatchRule_Vector_AllRulesExist_AllPass) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("pass1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("pass2", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("pass3", "test_data/rules/always_pass.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::vector<std::string> rule_names = {"pass1", "pass2", "pass3"};
+    std::map<std::string, MatchResult> results;
+
+    // 所有规则都通过，应该返回 true
+    EXPECT_TRUE(engine.match_rule(rule_names, adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 3);
+    EXPECT_TRUE(results.at("pass1").matched);
+    EXPECT_TRUE(results.at("pass2").matched);
+    EXPECT_TRUE(results.at("pass3").matched);
+}
+
+TEST_F(RuleEngineTest, MatchRule_Vector_SomeRulesNotExist) {
+    RuleEngine engine;
+    std::string error;
+
+    // 只添加两个规则
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/always_fail.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    // 请求中包含一个不存在的规则
+    std::vector<std::string> rule_names = {"rule1", "rule2", "nonexistent_rule"};
+    std::map<std::string, MatchResult> results;
+
+    // rule1 通过，应该返回 true
+    EXPECT_TRUE(engine.match_rule(rule_names, adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 3);
+
+    // rule1 应该通过
+    EXPECT_TRUE(results.at("rule1").matched);
+
+    // rule2 应该失败
+    EXPECT_FALSE(results.at("rule2").matched);
+
+    // 不存在的规则应该设置为失败，并包含错误信息
+    EXPECT_FALSE(results.at("nonexistent_rule").matched);
+    EXPECT_TRUE(results.at("nonexistent_rule").message.find("not found") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, MatchRule_Vector_AllRulesNotExist) {
+    RuleEngine engine;
+    std::string error;
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    // 请求中包含的所有规则都不存在
+    std::vector<std::string> rule_names = {"nonexistent1", "nonexistent2", "nonexistent3"};
+    std::map<std::string, MatchResult> results;
+
+    // 所有规则都不存在，应该返回 false
+    EXPECT_FALSE(engine.match_rule(rule_names, adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 3);
+
+    // 所有规则都应该标记为失败
+    EXPECT_FALSE(results.at("nonexistent1").matched);
+    EXPECT_TRUE(results.at("nonexistent1").message.find("not found") != std::string::npos);
+
+    EXPECT_FALSE(results.at("nonexistent2").matched);
+    EXPECT_TRUE(results.at("nonexistent2").message.find("not found") != std::string::npos);
+
+    EXPECT_FALSE(results.at("nonexistent3").matched);
+    EXPECT_TRUE(results.at("nonexistent3").message.find("not found") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, MatchRule_Vector_EmptyRuleList) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    // 空规则列表
+    std::vector<std::string> rule_names;
+    std::map<std::string, MatchResult> results;
+
+    // 空列表应该返回 true（没有规则失败）
+    EXPECT_TRUE(engine.match_rule(rule_names, adapter, results, &error));
+
+    EXPECT_TRUE(results.empty());
+}
+
+TEST_F(RuleEngineTest, MatchRule_Vector_MixedWithNonexistent_AllResultsRecorded) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加多个规则
+    ASSERT_TRUE(engine.add_rule("pass", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("fail", "test_data/rules/always_fail.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    // 混合存在的和不存在的规则
+    std::vector<std::string> rule_names = {
+        "pass",               // 存在且通过
+        "nonexistent1",       // 不存在
+        "fail",               // 存在但失败
+        "nonexistent2",       // 不存在
+        "pass"                // 重复规则（存在且通过）
+    };
+    std::map<std::string, MatchResult> results;
+
+    // 有规则通过，应该返回 true
+    EXPECT_TRUE(engine.match_rule(rule_names, adapter, results, &error));
+
+    // 验证：重复的规则应该只保留最后一个结果
+    ASSERT_EQ(results.size(), 4);
+
+    EXPECT_TRUE(results.at("pass").matched);
+    EXPECT_FALSE(results.at("fail").matched);
+    EXPECT_FALSE(results.at("nonexistent1").matched);
+    EXPECT_TRUE(results.at("nonexistent1").message.find("not found") != std::string::npos);
+    EXPECT_FALSE(results.at("nonexistent2").matched);
+    EXPECT_TRUE(results.at("nonexistent2").message.find("not found") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, MatchRule_Vector_OnlyNonexistentRules) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加一些规则
+    ASSERT_TRUE(engine.add_rule("existing_rule", "test_data/rules/always_pass.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    // 只请求不存在的规则
+    std::vector<std::string> rule_names = {
+        "nonexistent_a",
+        "nonexistent_b",
+        "nonexistent_c"
+    };
+    std::map<std::string, MatchResult> results;
+
+    // 所有请求的规则都不存在，应该返回 false
+    EXPECT_FALSE(engine.match_rule(rule_names, adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 3);
+
+    // 所有规则都应该标记为未找到
+    for (const auto& name : rule_names) {
+        EXPECT_FALSE(results.at(name).matched);
+        EXPECT_TRUE(results.at(name).message.find("not found") != std::string::npos);
+    }
+}
+
