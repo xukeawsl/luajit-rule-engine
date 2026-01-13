@@ -96,6 +96,74 @@ public:
     // 刷新 JIT 编译器缓存，清除已编译的代码
     bool flush_jit();
 
+    // 注册 C++ 函数到 Lua 的 ljre 命名空间
+    // 注册后可在 Lua 中通过 ljre.function_name() 调用
+    // 函数签名必须是 int (*)(lua_State* L)，返回值为返回值个数
+    bool register_function(const std::string& function_name,
+                           int (*function_ptr)(lua_State* L),
+                           std::string* error_msg = nullptr);
+
+    // 注册类成员函数到 Lua 的 ljre 命名空间
+    // 使用 lua_pushcclosure 将 instance 指针作为 upvalue[1] 传递
+    // 模板参数：类类型，成员函数指针类型
+    //
+    // 注意：此实现需要一个静态分发器函数，使用方式如下：
+    // class MyClass {
+    // public:
+    //     int my_method(lua_State* L) { /* ... */ }
+    //
+    //     // 静态分发器
+    //     static int my_method_dispatcher(lua_State* L) {
+    //         auto* self = static_cast<MyClass*>(lua_touserdata(L, lua_upvalueindex(1)));
+    //         return self->my_method(L);
+    //     }
+    // };
+    //
+    // 使用：
+    // MyClass obj;
+    // engine.register_function("my_method", &MyClass::my_method_dispatcher, &obj);
+    template <typename Class>
+    bool register_function(const std::string& function_name,
+                           int (*dispatcher)(lua_State* L),
+                           Class* instance,
+                           std::string* error_msg = nullptr) {
+        if (!_lua_state.is_valid()) {
+            if (error_msg) {
+                *error_msg = "Lua state is invalid";
+            }
+            return false;
+        }
+
+        lua_State* L = _lua_state.get();
+        LuaStackGuard guard(L);
+
+        // 确保 ljre 表存在
+        if (!ensure_ljre_table(error_msg)) {
+            return false;
+        }
+
+        // ljre 表现在在栈顶
+        // 设置 ljre[function_name] = closure
+        lua_pushstring(L, function_name.c_str());
+        lua_pushlightuserdata(L, instance);  // 压入 upvalue
+        lua_pushcclosure(L, dispatcher, 1);  // 1 个 upvalue，通过 lua_upvalueindex(1) 访问
+        lua_rawset(L, -3);  // ljre[function_name] = closure
+
+        return true;
+    }
+
+    // 注销函数
+    bool unregister_function(const std::string& function_name);
+
+    // 清空所有已注册的函数
+    void clear_registered_functions();
+
+    // 检查函数是否已注册
+    bool has_function(const std::string& function_name);
+
+    // 获取所有已注册的函数名
+    std::vector<std::string> get_registered_functions();
+
 protected:
     // 用于测试：允许派生类访问内部状态
     // 测试类可以继承 RuleEngine 并访问这些成员
@@ -118,6 +186,9 @@ private:
                              const DataAdapter& data_adapter,
                              MatchResult& result,
                              std::string* error_msg);
+
+    // 内部方法：确保 ljre 全局表存在
+    bool ensure_ljre_table(std::string* error_msg);
 };
 
 } // namespace ljre

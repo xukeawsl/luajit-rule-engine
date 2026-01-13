@@ -746,6 +746,87 @@ size_t get_rule_count() const;
 void clear_rules();
 ```
 
+#### JIT 控制方法
+```cpp
+// 启用 JIT 编译（默认已启用）
+bool enable_jit();
+
+// 禁用 JIT 编译，切换到解释模式
+bool disable_jit();
+
+// 刷新 JIT 编译器缓存，清除已编译的代码
+bool flush_jit();
+```
+
+#### 函数注册
+
+允许将 C++ 函数注册到 Lua 的全局 `ljre` 命名空间，使得 Lua 规则文件可以调用这些函数。这对于禁用了某些 Lua 标准库（如 `os` 库）的情况下特别有用。
+
+**注册普通 C 函数**：
+```cpp
+// C 函数签名必须是 int (*)(lua_State* L)，返回值为返回值个数
+int get_current_time_ms(lua_State* L) {
+    auto now = std::chrono::system_clock::now();
+    auto duration = now.time_since_epoch();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    lua_pushnumber(L, static_cast<lua_Number>(millis));
+    return 1;  // 返回 1 个值
+}
+
+RuleEngine engine;
+std::string error;
+engine.register_function("get_time_ms", get_current_time_ms, &error);
+```
+
+**注册类成员函数**：
+```cpp
+class MathHelper {
+public:
+    int add(lua_State* L) {
+        double a = lua_tonumber(L, 1);
+        double b = lua_tonumber(L, 2);
+        lua_pushnumber(L, a + b);
+        return 1;
+    }
+
+    // 静态分发器（必需）
+    static int add_dispatcher(lua_State* L) {
+        auto* self = static_cast<MathHelper*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->add(L);
+    }
+};
+
+MathHelper helper;
+engine.register_function("add", &MathHelper::add_dispatcher, &helper, &error);
+```
+
+在 Lua 规则中调用：
+```lua
+function match(data)
+    -- 调用注册的 C 函数
+    local time = ljre.get_time_ms()
+    ljre.log("Processing at: " .. time)
+
+    local sum = ljre.add(data.value1, data.value2)
+    return sum > 100, "Sum is " .. sum
+end
+```
+
+**函数管理**：
+```cpp
+// 检查函数是否已注册
+bool has = engine.has_function("get_time_ms");
+
+// 获取所有已注册的函数名
+std::vector<std::string> funcs = engine.get_registered_functions();
+
+// 注销单个函数
+engine.unregister_function("log");
+
+// 清空所有已注册的函数
+engine.clear_registered_functions();
+```
+
 ## 性能优化
 
 ### 基本优化建议
