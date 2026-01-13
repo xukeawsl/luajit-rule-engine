@@ -189,7 +189,9 @@ TEST_F(IntegrationTest, UserRegistration_FullScenario) {
 
     all_passed = engine.match_all_rules(adapter2, results2, &error);
 
-    EXPECT_FALSE(all_passed) << "未成年用户应该被拒绝";
+    // 注意：修改后的语义是"只要有一个规则通过就返回 true"
+    // 这里年龄验证失败，但手机号、邮箱等验证通过，所以返回 true
+    EXPECT_TRUE(all_passed) << "部分验证通过，应该返回 true";
     ASSERT_EQ(results2.size(), 4);
 
     // 验证具体哪些规则通过了，哪些失败了
@@ -644,7 +646,11 @@ end
     JsonAdapter adapter2(invalid_order1);
     std::map<std::string, MatchResult> results2;
 
-    EXPECT_FALSE(engine.match_all_rules(adapter2, results2, &error));
+    // 注意：修改后的语义是"只要有一个规则通过就返回 true"
+    // 这里金额验证失败，但商品验证通过，所以返回 true
+    EXPECT_TRUE(engine.match_all_rules(adapter2, results2, &error));
+    EXPECT_FALSE(results2.at("amount_check").matched) << "金额验证应该失败";
+    EXPECT_TRUE(results2.at("items_check").matched) << "商品验证应该通过";
 
     // 测试无效订单（商品数量为0）
     json invalid_order2 = {
@@ -655,7 +661,11 @@ end
     JsonAdapter adapter3(invalid_order2);
     std::map<std::string, MatchResult> results3;
 
-    EXPECT_FALSE(engine.match_all_rules(adapter3, results3, &error));
+    // 注意：修改后的语义是"只要有一个规则通过就返回 true"
+    // 这里商品验证失败，但金额验证通过，所以返回 true
+    EXPECT_TRUE(engine.match_all_rules(adapter3, results3, &error));
+    EXPECT_TRUE(results3.at("amount_check").matched) << "金额验证应该通过";
+    EXPECT_FALSE(results3.at("items_check").matched) << "商品验证应该失败";
 }
 
 // ============================================================================

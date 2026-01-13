@@ -1097,9 +1097,10 @@ json data = { {"age", 25}, {"email", "test@example.com"} };
 JsonAdapter adapter(data);
 
 // 3. 批量匹配 (比逐个匹配更高效)
+// 注意：match_all_rules 返回 true 表示至少有一个规则匹配成功
 std::map<std::string, MatchResult> results;
 if (!engine.match_all_rules(adapter, results, &error)) {
-    std::cerr << "匹配失败: " << error << std::endl;
+    std::cerr << "所有规则匹配失败: " << error << std::endl;
     return 1;
 }
 

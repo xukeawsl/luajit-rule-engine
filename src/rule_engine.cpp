@@ -203,22 +203,29 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
 
     results.clear();
 
-    bool all_matched = true;
+    // 如果没有任何规则，直接返回 true
+    if (_rules.empty()) {
+        return true;
+    }
+
+    bool any_matched = false;
     for (const auto& pair : _rules) {
         MatchResult result;
-        if (!match_rule(pair.first, data_adapter, result, error_msg)) {
+        std::string rule_error_msg;
+        if (!match_rule(pair.first, data_adapter, result, &rule_error_msg)) {
+            // 匹配规则调用失败，明确设置为匹配失败状态
+            result.matched = false;
+            result.message = "Failed to call match: " + rule_error_msg;
             results[pair.first] = result;
-            all_matched = false;
         } else {
             results[pair.first] = result;
-        }
-
-        if (!result.matched) {
-            all_matched = false;
+            if (result.matched) {
+                any_matched = true;
+            }
         }
     }
 
-    return all_matched;
+    return any_matched;
 }
 
 std::vector<RuleInfo> RuleEngine::get_all_rules() const {

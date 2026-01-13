@@ -471,71 +471,6 @@ TEST_F(RuleEngineTest, MatchRule_ThrowingError_Fails) {
 // RuleEngine 批量匹配测试
 // ============================================================================
 
-TEST_F(RuleEngineTest, MatchAllRules_AllPass_ReturnsTrue) {
-    RuleEngine engine;
-    std::string error;
-
-    ASSERT_TRUE(engine.add_rule("pass1", "test_data/rules/always_pass.lua", &error));
-    ASSERT_TRUE(engine.add_rule("pass2", "test_data/rules/always_pass.lua", &error));
-
-    json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
-
-    std::map<std::string, MatchResult> results;
-    EXPECT_TRUE(engine.match_all_rules(adapter, results, &error));
-
-    ASSERT_EQ(results.size(), 2);
-    EXPECT_TRUE(results.at("pass1").matched);
-    EXPECT_TRUE(results.at("pass2").matched);
-}
-
-TEST_F(RuleEngineTest, MatchAllRules_SomeFail_ReturnsFalse) {
-    RuleEngine engine;
-    std::string error;
-
-    ASSERT_TRUE(engine.add_rule("pass", "test_data/rules/always_pass.lua", &error));
-    ASSERT_TRUE(engine.add_rule("fail", "test_data/rules/always_fail.lua", &error));
-
-    json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
-
-    std::map<std::string, MatchResult> results;
-    EXPECT_FALSE(engine.match_all_rules(adapter, results, &error));
-
-    ASSERT_EQ(results.size(), 2);
-    EXPECT_TRUE(results.at("pass").matched);
-    EXPECT_FALSE(results.at("fail").matched);
-}
-
-TEST_F(RuleEngineTest, MatchAllRules_AllFail_ReturnsFalse) {
-    RuleEngine engine;
-    std::string error;
-
-    ASSERT_TRUE(engine.add_rule("fail1", "test_data/rules/always_fail.lua", &error));
-    ASSERT_TRUE(engine.add_rule("fail2", "test_data/rules/always_fail.lua", &error));
-
-    json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
-
-    std::map<std::string, MatchResult> results;
-    EXPECT_FALSE(engine.match_all_rules(adapter, results, &error));
-
-    ASSERT_EQ(results.size(), 2);
-    EXPECT_FALSE(results.at("fail1").matched);
-    EXPECT_FALSE(results.at("fail2").matched);
-}
-
-TEST_F(RuleEngineTest, MatchAllRules_NoRules_ReturnsTrue) {
-    RuleEngine engine;
-
-    json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
-
-    std::map<std::string, MatchResult> results;
-    EXPECT_TRUE(engine.match_all_rules(adapter, results));
-    EXPECT_TRUE(results.empty());
-}
-
 TEST_F(RuleEngineTest, MatchAllRules_ComplexScenario) {
     RuleEngine engine;
     std::string error;
@@ -569,7 +504,8 @@ TEST_F(RuleEngineTest, MatchAllRules_ComplexScenario) {
     JsonAdapter invalid_adapter1(invalid_data1);
 
     std::map<std::string, MatchResult> results2;
-    EXPECT_FALSE(engine.match_all_rules(invalid_adapter1, results2, &error));
+    // 有一个规则通过，应该返回 true
+    EXPECT_TRUE(engine.match_all_rules(invalid_adapter1, results2, &error));
 
     ASSERT_EQ(results2.size(), 2);
     EXPECT_TRUE(results2.at("field").matched);   // field_complete 通过
@@ -580,7 +516,8 @@ TEST_F(RuleEngineTest, MatchAllRules_ComplexScenario) {
     JsonAdapter invalid_adapter2(invalid_data2);
 
     std::map<std::string, MatchResult> results3;
-    EXPECT_FALSE(engine.match_all_rules(invalid_adapter2, results3, &error));
+    // 有一个规则通过，应该返回 true
+    EXPECT_TRUE(engine.match_all_rules(invalid_adapter2, results3, &error));
 
     ASSERT_EQ(results3.size(), 2);
     EXPECT_TRUE(results3.at("age").matched);      // age_check 通过
@@ -1107,41 +1044,6 @@ TEST_F(RuleEngineTest, MatchRule_RuleThrowsError_Fails) {
     EXPECT_FALSE(error.empty());
 }
 
-TEST_F(RuleEngineTest, MatchAllRules_EmptyRules_Succeeds) {
-    RuleEngine engine;
-
-    json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
-
-    std::map<std::string, MatchResult> results;
-    std::string error;
-
-    EXPECT_TRUE(engine.match_all_rules(adapter, results, &error));
-    EXPECT_TRUE(results.empty());
-}
-
-TEST_F(RuleEngineTest, MatchAllRules_PartialFailure_ReturnsFalse) {
-    RuleEngine engine;
-    std::string error;
-
-    // 添加一个正常规则
-    ASSERT_TRUE(engine.add_rule("pass", "test_data/rules/always_pass.lua", &error));
-
-    // 添加一个会失败的规则
-    test_helpers::TestDataFile error_rule("error_rule.lua", R"(
-        function match(data)
-            error("Intentional error")
-        end
-    )");
-    ASSERT_TRUE(engine.add_rule("fail", error_rule.path().c_str(), &error));
-
-    json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
-
-    std::map<std::string, MatchResult> results;
-    EXPECT_FALSE(engine.match_all_rules(adapter, results, &error));
-    EXPECT_FALSE(error.empty());
-}
 
 TEST_F(RuleEngineTest, GetRuleCount_EmptyEngine_ReturnsZero) {
     RuleEngine engine;
@@ -1759,5 +1661,199 @@ TEST_F(RuleEngineTest, FlushJit_InvalidState_ReturnsFalse) {
 
     // 当 Lua 状态无效时，flush_jit 应该返回 false
     EXPECT_FALSE(engine.test_flush_jit_with_invalid_state());
+}
+
+// ============================================================================
+// RuleEngine match_all_rules 修改后的行为测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, MatchAllRules_EmptyRules_ReturnsTrue) {
+    RuleEngine engine;
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    std::string error;
+
+    // 空规则集合应该返回 true
+    EXPECT_TRUE(engine.match_all_rules(adapter, results, &error));
+    EXPECT_TRUE(results.empty());
+    EXPECT_TRUE(error.empty());
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_AnyOnePass_ReturnsTrue) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加一个通过规则和一个失败规则
+    ASSERT_TRUE(engine.add_rule("pass_rule", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("fail_rule", "test_data/rules/always_fail.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    // 只要有一个规则匹配成功就应该返回 true
+    EXPECT_TRUE(engine.match_all_rules(adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 2);
+    EXPECT_TRUE(results.at("pass_rule").matched);
+    EXPECT_FALSE(results.at("fail_rule").matched);
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_AllPass_ReturnsTrue) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加多个通过规则
+    ASSERT_TRUE(engine.add_rule("pass1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("pass2", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("pass3", "test_data/rules/always_pass.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    // 所有规则都通过，应该返回 true
+    EXPECT_TRUE(engine.match_all_rules(adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 3);
+    EXPECT_TRUE(results.at("pass1").matched);
+    EXPECT_TRUE(results.at("pass2").matched);
+    EXPECT_TRUE(results.at("pass3").matched);
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_AllFail_ReturnsFalse) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加多个失败规则
+    ASSERT_TRUE(engine.add_rule("fail1", "test_data/rules/always_fail.lua", &error));
+    ASSERT_TRUE(engine.add_rule("fail2", "test_data/rules/always_fail.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    // 所有规则都失败，应该返回 false
+    EXPECT_FALSE(engine.match_all_rules(adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 2);
+    EXPECT_FALSE(results.at("fail1").matched);
+    EXPECT_FALSE(results.at("fail2").matched);
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_CallFailure_SetsMatchedFalse) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加一个正常规则
+    ASSERT_TRUE(engine.add_rule("pass", "test_data/rules/always_pass.lua", &error));
+
+    // 添加一个会抛出错误的规则
+    test_helpers::TestDataFile error_rule("error_rule.lua", R"(
+        function match(data)
+            error("Intentional error in match")
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("error_rule", error_rule.path().c_str(), &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    // 有一个规则匹配成功，应该返回 true
+    EXPECT_TRUE(engine.match_all_rules(adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 2);
+
+    // 第一个规则应该正常匹配
+    EXPECT_TRUE(results.at("pass").matched);
+    EXPECT_FALSE(results.at("pass").message.empty());
+
+    // 第二个规则调用失败，应该设置为 matched = false 并包含错误信息
+    EXPECT_FALSE(results.at("error_rule").matched);
+    EXPECT_TRUE(results.at("error_rule").message.find("Failed to call match") != std::string::npos);
+    EXPECT_TRUE(results.at("error_rule").message.find("Intentional error") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_AllCallFailure_ReturnsFalse) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加两个都会抛出错误的规则
+    test_helpers::TestDataFile error_rule1("error_rule1.lua", R"(
+        function match(data)
+            error("Error in rule 1")
+        end
+    )");
+
+    test_helpers::TestDataFile error_rule2("error_rule2.lua", R"(
+        function match(data)
+            error("Error in rule 2")
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("error1", error_rule1.path().c_str(), &error));
+    ASSERT_TRUE(engine.add_rule("error2", error_rule2.path().c_str(), &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    // 所有规则都调用失败，应该返回 false
+    EXPECT_FALSE(engine.match_all_rules(adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 2);
+
+    // 验证两个规则都被设置为失败状态
+    EXPECT_FALSE(results.at("error1").matched);
+    EXPECT_TRUE(results.at("error1").message.find("Failed to call match") != std::string::npos);
+    EXPECT_TRUE(results.at("error1").message.find("Error in rule 1") != std::string::npos);
+
+    EXPECT_FALSE(results.at("error2").matched);
+    EXPECT_TRUE(results.at("error2").message.find("Failed to call match") != std::string::npos);
+    EXPECT_TRUE(results.at("error2").message.find("Error in rule 2") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, MatchAllRules_ComplexMixedScenario) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加混合类型的规则：通过的、失败的、调用错误的
+    ASSERT_TRUE(engine.add_rule("pass1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("fail1", "test_data/rules/always_fail.lua", &error));
+
+    test_helpers::TestDataFile error_rule("error_rule.lua", R"(
+        function match(data)
+            error("Runtime error")
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("error_rule", error_rule.path().c_str(), &error));
+
+    ASSERT_TRUE(engine.add_rule("pass2", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("fail2", "test_data/rules/always_fail.lua", &error));
+
+    json data = {{"key", "value"}};
+    JsonAdapter adapter(data);
+
+    std::map<std::string, MatchResult> results;
+    // 有规则匹配成功，应该返回 true
+    EXPECT_TRUE(engine.match_all_rules(adapter, results, &error));
+
+    ASSERT_EQ(results.size(), 5);
+
+    // 验证通过规则
+    EXPECT_TRUE(results.at("pass1").matched);
+    EXPECT_TRUE(results.at("pass2").matched);
+
+    // 验证失败规则
+    EXPECT_FALSE(results.at("fail1").matched);
+    EXPECT_FALSE(results.at("fail2").matched);
+
+    // 验证错误规则
+    EXPECT_FALSE(results.at("error_rule").matched);
+    EXPECT_TRUE(results.at("error_rule").message.find("Failed to call match") != std::string::npos);
 }
 

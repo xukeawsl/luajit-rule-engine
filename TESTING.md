@@ -414,7 +414,9 @@ end
     JsonAdapter invalid_adapter(invalid_data);
 
     std::map<std::string, MatchResult> invalid_results;
-    EXPECT_FALSE(engine.match_all_rules(invalid_adapter, invalid_results, &error));
+    // 注意：新语义是"只要有一个规则通过就返回 true"
+    // 这里 email 规则通过，所以返回 true
+    EXPECT_TRUE(engine.match_all_rules(invalid_adapter, invalid_results, &error));
 
     // 验证哪个规则失败了
     EXPECT_FALSE(invalid_results.at("age").matched);

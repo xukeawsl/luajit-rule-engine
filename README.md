@@ -535,12 +535,12 @@ int main() {
                   << ", 信息: " << result.message << std::endl;
     }
 
-    // 匹配所有规则
+    // 匹配所有规则（只要有一个规则通过就返回 true）
     std::map<std::string, MatchResult> results;
     if (engine.match_all_rules(adapter, results)) {
-        std::cout << "所有规则匹配成功" << std::endl;
+        std::cout << "至少一个规则匹配成功" << std::endl;
     } else {
-        std::cout << "部分规则匹配失败" << std::endl;
+        std::cout << "所有规则匹配失败" << std::endl;
         for (const auto& pair : results) {
             std::cout << "  - [" << pair.first << "] "
                       << (pair.second.matched ? "✓" : "✗") << " "
@@ -687,6 +687,12 @@ bool match_all_rules(const DataAdapter& data_adapter,
                      std::string* error_msg = nullptr);
 ```
 返回的 `results` 是一个 `std::map`，键为规则名，值为匹配结果，按规则名字母顺序排序。
+
+**返回值**：
+- `true`: 至少有一个规则匹配成功
+- `false`: 所有规则都匹配失败
+
+**注意**：即使某个规则调用失败（如抛出异常），也会将其结果添加到 `results` 中，并设置 `matched = false` 和相应的错误信息。
 
 #### 获取规则信息
 ```cpp

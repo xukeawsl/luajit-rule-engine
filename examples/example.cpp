@@ -47,12 +47,12 @@ int main() {
         std::cout << "✗ age_check 规则匹配失败" << std::endl;
     }
 
-    // 匹配所有规则
+    // 匹配所有规则（只要有一个规则通过就返回 true）
     std::map<std::string, MatchResult> results;
     if (engine.match_all_rules(adapter1, results)) {
-        std::cout << "✓ 所有规则匹配成功" << std::endl;
+        std::cout << "✓ 至少一个规则匹配成功" << std::endl;
     } else {
-        std::cout << "✗ 部分规则匹配失败" << std::endl;
+        std::cout << "✗ 所有规则匹配失败" << std::endl;
     }
 
     std::cout << "\n详细结果:" << std::endl;
@@ -79,9 +79,9 @@ int main() {
     std::map<std::string, MatchResult> results2;
 
     if (engine.match_all_rules(adapter2, results2)) {
-        std::cout << "✓ 所有规则匹配成功" << std::endl;
+        std::cout << "✓ 至少一个规则匹配成功" << std::endl;
     } else {
-        std::cout << "✗ 部分规则匹配失败" << std::endl;
+        std::cout << "✗ 所有规则匹配失败" << std::endl;
     }
 
     std::cout << "\n详细结果:" << std::endl;
@@ -107,9 +107,9 @@ int main() {
     std::map<std::string, MatchResult> results3;
 
     if (engine.match_all_rules(adapter3, results3)) {
-        std::cout << "✓ 所有规则匹配成功" << std::endl;
+        std::cout << "✓ 至少一个规则匹配成功" << std::endl;
     } else {
-        std::cout << "✗ 部分规则匹配失败" << std::endl;
+        std::cout << "✗ 所有规则匹配失败" << std::endl;
     }
 
     std::cout << "\n详细结果:" << std::endl;
