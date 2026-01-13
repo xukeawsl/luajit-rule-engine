@@ -226,13 +226,19 @@ static void BM_Comp_Direct_JSON_No_Adapter(benchmark::State& state) {
 }
 
 // ============================================================================
-// 对比测试：批量 vs 单次
+// 批量 vs 单次匹配对比测试（大规模）
 // ============================================================================
 
-static void BM_Comp_Batch_MatchAll(benchmark::State& state) {
+// 测试100个规则
+static void BM_Comp_Batch_MatchAll_100Rules(benchmark::State& state) {
     ljre::RuleEngine engine;
-    engine.add_rule("rule1", "../benchmarks/src/rules/simple_age_check.lua");
-    engine.add_rule("rule2", "../benchmarks/src/rules/medium_validation.lua");
+    for (int i = 0; i < 100; ++i) {
+        std::string rule_name = "rule" + std::to_string(i);
+        std::string rule_file = (i % 2 == 0)
+            ? "../benchmarks/src/rules/simple_age_check.lua"
+            : "../benchmarks/src/rules/medium_validation.lua";
+        engine.add_rule(rule_name, rule_file);
+    }
 
     DataGenerator generator;
     auto data = generator.generate_data(DataSize::Medium);
@@ -244,21 +250,117 @@ static void BM_Comp_Batch_MatchAll(benchmark::State& state) {
     }
 }
 
-static void BM_Comp_Individual_Match(benchmark::State& state) {
+static void BM_Comp_Individual_Match_100Rules(benchmark::State& state) {
     ljre::RuleEngine engine;
-    engine.add_rule("rule1", "../benchmarks/src/rules/simple_age_check.lua");
-    engine.add_rule("rule2", "../benchmarks/src/rules/medium_validation.lua");
+    std::vector<std::string> rule_names;
+    for (int i = 0; i < 100; ++i) {
+        std::string rule_name = "rule" + std::to_string(i);
+        std::string rule_file = (i % 2 == 0)
+            ? "../benchmarks/src/rules/simple_age_check.lua"
+            : "../benchmarks/src/rules/medium_validation.lua";
+        engine.add_rule(rule_name, rule_file);
+        rule_names.push_back(rule_name);
+    }
 
     DataGenerator generator;
     auto data = generator.generate_data(DataSize::Medium);
 
     for (auto _ : state) {
-        ljre::MatchResult result1;
-        ljre::MatchResult result2;
-        engine.match_rule("rule1", ljre::JsonAdapter(data), result1);
-        engine.match_rule("rule2", ljre::JsonAdapter(data), result2);
-        benchmark::DoNotOptimize(result1);
-        benchmark::DoNotOptimize(result2);
+        std::vector<ljre::MatchResult> results(100);
+        for (int i = 0; i < 100; ++i) {
+            engine.match_rule(rule_names[i], ljre::JsonAdapter(data), results[i]);
+        }
+        benchmark::DoNotOptimize(results);
+    }
+}
+
+// 测试500个规则
+static void BM_Comp_Batch_MatchAll_500Rules(benchmark::State& state) {
+    ljre::RuleEngine engine;
+    for (int i = 0; i < 500; ++i) {
+        std::string rule_name = "rule" + std::to_string(i);
+        std::string rule_file = (i % 2 == 0)
+            ? "../benchmarks/src/rules/simple_age_check.lua"
+            : "../benchmarks/src/rules/medium_validation.lua";
+        engine.add_rule(rule_name, rule_file);
+    }
+
+    DataGenerator generator;
+    auto data = generator.generate_data(DataSize::Medium);
+
+    for (auto _ : state) {
+        std::map<std::string, ljre::MatchResult> results;
+        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        benchmark::DoNotOptimize(results);
+    }
+}
+
+static void BM_Comp_Individual_Match_500Rules(benchmark::State& state) {
+    ljre::RuleEngine engine;
+    std::vector<std::string> rule_names;
+    for (int i = 0; i < 500; ++i) {
+        std::string rule_name = "rule" + std::to_string(i);
+        std::string rule_file = (i % 2 == 0)
+            ? "../benchmarks/src/rules/simple_age_check.lua"
+            : "../benchmarks/src/rules/medium_validation.lua";
+        engine.add_rule(rule_name, rule_file);
+        rule_names.push_back(rule_name);
+    }
+
+    DataGenerator generator;
+    auto data = generator.generate_data(DataSize::Medium);
+
+    for (auto _ : state) {
+        std::vector<ljre::MatchResult> results(500);
+        for (int i = 0; i < 500; ++i) {
+            engine.match_rule(rule_names[i], ljre::JsonAdapter(data), results[i]);
+        }
+        benchmark::DoNotOptimize(results);
+    }
+}
+
+// 测试1000个规则
+static void BM_Comp_Batch_MatchAll_1000Rules(benchmark::State& state) {
+    ljre::RuleEngine engine;
+    for (int i = 0; i < 1000; ++i) {
+        std::string rule_name = "rule" + std::to_string(i);
+        std::string rule_file = (i % 2 == 0)
+            ? "../benchmarks/src/rules/simple_age_check.lua"
+            : "../benchmarks/src/rules/medium_validation.lua";
+        engine.add_rule(rule_name, rule_file);
+    }
+
+    DataGenerator generator;
+    auto data = generator.generate_data(DataSize::Medium);
+
+    for (auto _ : state) {
+        std::map<std::string, ljre::MatchResult> results;
+        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        benchmark::DoNotOptimize(results);
+    }
+}
+
+static void BM_Comp_Individual_Match_1000Rules(benchmark::State& state) {
+    ljre::RuleEngine engine;
+    std::vector<std::string> rule_names;
+    for (int i = 0; i < 1000; ++i) {
+        std::string rule_name = "rule" + std::to_string(i);
+        std::string rule_file = (i % 2 == 0)
+            ? "../benchmarks/src/rules/simple_age_check.lua"
+            : "../benchmarks/src/rules/medium_validation.lua";
+        engine.add_rule(rule_name, rule_file);
+        rule_names.push_back(rule_name);
+    }
+
+    DataGenerator generator;
+    auto data = generator.generate_data(DataSize::Medium);
+
+    for (auto _ : state) {
+        std::vector<ljre::MatchResult> results(1000);
+        for (int i = 0; i < 1000; ++i) {
+            engine.match_rule(rule_names[i], ljre::JsonAdapter(data), results[i]);
+        }
+        benchmark::DoNotOptimize(results);
     }
 }
 
@@ -321,16 +423,39 @@ BENCHMARK(BM_Comp_Direct_JSON_No_Adapter)
     ->Iterations(100000)
     ->Unit(benchmark::kNanosecond);
 
-// 批量 vs 单次对比
-BENCHMARK(BM_Comp_Batch_MatchAll)
-    ->Name("Batch_MatchAllRules")
-    ->Iterations(10000)
-    ->Unit(benchmark::kNanosecond);
+// 批量 vs 单次对比（大规模）
+// 100个规则对比
+BENCHMARK(BM_Comp_Batch_MatchAll_100Rules)
+    ->Name("Batch_MatchAllRules_100")
+    ->Iterations(1000)
+    ->Unit(benchmark::kMicrosecond);
 
-BENCHMARK(BM_Comp_Individual_Match)
-    ->Name("Individual_Match_Sequential")
-    ->Iterations(10000)
-    ->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Comp_Individual_Match_100Rules)
+    ->Name("Individual_Match_100")
+    ->Iterations(1000)
+    ->Unit(benchmark::kMicrosecond);
+
+// 500个规则对比
+BENCHMARK(BM_Comp_Batch_MatchAll_500Rules)
+    ->Name("Batch_MatchAllRules_500")
+    ->Iterations(100)
+    ->Unit(benchmark::kMicrosecond);
+
+BENCHMARK(BM_Comp_Individual_Match_500Rules)
+    ->Name("Individual_Match_500")
+    ->Iterations(100)
+    ->Unit(benchmark::kMicrosecond);
+
+// 1000个规则对比
+BENCHMARK(BM_Comp_Batch_MatchAll_1000Rules)
+    ->Name("Batch_MatchAllRules_1000")
+    ->Iterations(100)
+    ->Unit(benchmark::kMicrosecond);
+
+BENCHMARK(BM_Comp_Individual_Match_1000Rules)
+    ->Name("Individual_Match_1000")
+    ->Iterations(100)
+    ->Unit(benchmark::kMicrosecond);
 
 // 运行所有对比测试
 BENCHMARK_MAIN();

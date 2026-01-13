@@ -2,6 +2,53 @@
 
 所有重要的项目变更都将记录在此文件中。
 
+## [未发布] - 2026-01
+
+### 新增 (Added)
+
+#### 边界情况测试增强
+- **match_all_rules 边界情况测试**: 新增 7 个测试用例
+  - push_to_lua 失败场景测试
+  - 函数表不存在场景测试
+  - 函数不存在场景测试
+  - 第一个返回值不是布尔值场景测试
+  - 第二个返回值不是字符串场景测试（使用空消息）
+  - 混合错误场景测试
+  - 只有错误场景测试
+- **总测试数量**: 从 228 个增加到 236 个测试用例
+
+### 改进 (Changed)
+
+#### 返回值类型检查优化
+- **精确类型检查**: 使用 `lua_type()` 代替 `lua_isstring()`
+  - 修复 `lua_isstring()` 对数字返回 `true` 的问题（因为 Lua 会自动转换数字为字符串）
+  - 现在只有精确的 `LUA_TSTRING` 类型才会被当作字符串处理
+  - 数字、nil 等类型不再被误判为字符串
+- **统一行为**: `match_all_rules` 和 `match_rule` 的返回值处理逻辑完全一致
+  - 当第二个返回值不是字符串时，message 字段为空字符串
+  - 不再使用默认消息 "Matched" 或 "Not matched"
+
+#### 测试更新
+- 更新 `MatchAllRules_SecondReturnNotString` 测试用例
+  - 测试名称改为 `MatchAllRules_SecondReturnNotString_UsesEmptyMessage`
+  - 验证 message 为空字符串而非包含 "Matched"
+- 所有 236 个测试用例全部通过
+
+### 文档更新 (Documentation)
+
+- 更新 README.md：
+  - 更新 `match` 函数返回值说明
+  - 明确第二个返回值必须是精确的 string 类型
+  - 更新注意事项，说明非字符串类型的处理方式
+- 更新 ARCHITECTURE.md：
+  - 更新返回值说明
+  - 添加类型检查细节
+- 更新 CHANGELOG.md：
+  - 记录类型检查优化
+  - 记录测试用例增加
+
+---
+
 ## [未发布] - 2025-01
 
 ### 新增 (Added)

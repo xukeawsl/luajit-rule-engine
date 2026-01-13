@@ -458,7 +458,9 @@ User              RuleEngine       DataAdapter      LuaState
 2. 适配器将 C++ 数据转换为 Lua table
 3. 从 Lua Registry 获取 match 函数
 4. 调用 Lua 函数，传入数据 table
-5. 获取返回值：boolean + string
+5. 获取返回值：boolean（必需）+ string（可选）
+   - 第二个返回值必须是 string 类型才会被使用
+   - 如果是数字、nil 或其他类型，message 字段将为空字符串
 ```
 
 ### 4.3 内存管理流程

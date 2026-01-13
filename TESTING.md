@@ -52,9 +52,9 @@ ctest --rerun-failed --output-on-failure
 | `lua_state_test.cpp` | Lua 状态管理 | 52 | ✅ 全部通过 |
 | `lua_stack_guard_test.cpp` | Lua 栈守卫 | 17 | ✅ 全部通过 |
 | `data_adapter_test.cpp` | 数据适配器 | 55 | ✅ 全部通过 |
-| `rule_engine_test.cpp` | 规则引擎 | 89 | ✅ 全部通过 |
+| `rule_engine_test.cpp` | 规则引擎 | 97 | ✅ 全部通过 |
 | `integration_test.cpp` | 集成测试 | 15 | ✅ 全部通过 |
-| **总计** | | **228** | **✅ 100% 通过** |
+| **总计** | | **236** | **✅ 100% 通过** |
 
 ### 测试分类
 
@@ -98,7 +98,7 @@ ctest --rerun-failed --output-on-failure
 
 #### 2. 集成测试 (Integration Tests)
 
-**rule_engine_test.cpp** - 规则引擎集成测试 (89个测试用例)
+**rule_engine_test.cpp** - 规则引擎集成测试 (97个测试用例)
 - 规则加载和卸载
 - 规则匹配（单个和批量）
 - 规则热更新
@@ -115,6 +115,14 @@ ctest --rerun-failed --output-on-failure
     - enable_jit 在无效状态下返回 false
     - disable_jit 在无效状态下返回 false
     - flush_jit 在无效状态下返回 false
+- **match_all_rules 边界情况测试** (7个测试用例)
+  - push_to_lua 失败场景测试
+  - 函数表不存在场景测试
+  - 函数不存在场景测试
+  - 第一个返回值不是布尔值场景测试
+  - 第二个返回值不是字符串场景测试（使用空消息）
+  - 混合错误场景测试
+  - 只有错误场景测试
 
 **integration_test.cpp** - 端到端场景测试 (15个测试用例)
 - 用户注册验证

@@ -208,20 +208,80 @@ bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
         return true;
     }
 
+    lua_State* L = _lua_state.get();
+    LuaStackGuard guard(L);  // 自动管理栈平衡
+
+    // 优化：只转换一次数据，将 Lua table 保留在栈上
+    if (!data_adapter.push_to_lua(L, error_msg)) {
+        return false;
+    }
+
+    // 数据表现在在栈顶（-1 位置），记住它的位置
+    int data_table_index = lua_gettop(L);
+
     bool any_matched = false;
     for (const auto& pair : _rules) {
-        MatchResult result;
-        std::string rule_error_msg;
-        if (!match_rule(pair.first, data_adapter, result, &rule_error_msg)) {
-            // 匹配规则调用失败，明确设置为匹配失败状态
+        // 获取规则函数
+        lua_getglobal(L, "_rule_functions");
+        if (!lua_istable(L, -1)) {
+            // 如果函数表不存在，记录错误并继续
+            MatchResult result;
             result.matched = false;
-            result.message = "Failed to call match: " + rule_error_msg;
+            result.message = "Rule function table not found";
             results[pair.first] = result;
+            lua_pop(L, 1);  // 清理栈
+            continue;
+        }
+
+        lua_pushlstring(L, pair.first.data(), pair.first.size());
+        lua_rawget(L, -2);  // 获取 _rule_functions[rule_name]
+        lua_remove(L, -2);  // 移除 _rule_functions 表
+
+        if (!lua_isfunction(L, -1)) {
+            // 如果函数不存在，记录错误并继续
+            MatchResult result;
+            result.matched = false;
+            result.message = "Rule '" + pair.first + "' match function not found";
+            results[pair.first] = result;
+            lua_pop(L, 1);  // 清理栈
+            continue;
+        }
+
+        // 复制数据表作为参数（不重新转换）
+        lua_pushvalue(L, data_table_index);
+
+        // 调用 match 函数：1 个参数，2 个返回值
+        if (lua_pcall(L, 1, 2, 0) != LUA_OK) {
+            // 调用失败，记录错误并继续处理下一个规则
+            MatchResult result;
+            result.matched = false;
+            result.message = "Failed to call match: " + _lua_state.get_error_string();
+            results[pair.first] = result;
+            lua_pop(L, 2);  // 清理返回值
+            continue;
+        }
+
+        // 获取返回值
+        MatchResult result;
+        if (!lua_isboolean(L, -2)) {
+            result.matched = false;
+            result.message = "First return value is not boolean";
         } else {
-            results[pair.first] = result;
-            if (result.matched) {
-                any_matched = true;
+            result.matched = lua_toboolean(L, -2);
+
+            // lua_isstring 会对数字返回 true（因为数字可以转换为字符串）
+            // 所以需要使用 lua_type 来精确检查类型
+            if (lua_type(L, -1) == LUA_TSTRING) {
+                result.message = lua_tostring(L, -1);
             }
+            // 如果不是字符串，message 保持为空字符串
+        }
+
+        lua_pop(L, 2);  // 清理返回值
+        results[pair.first] = result;
+
+        if (result.matched) {
+            any_matched = true;
         }
     }
 
@@ -326,7 +386,7 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
 
     // 获取第二个返回值：错误信息（可选）
     std::string message;
-    if (lua_isstring(L, -1)) {
+    if (lua_type(L, -1) == LUA_TSTRING) {
         message = lua_tostring(L, -1);
     }
 
