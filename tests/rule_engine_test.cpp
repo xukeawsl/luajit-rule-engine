@@ -1151,6 +1151,15 @@ public:
         lua_pushstring(L, "corrupted");
         lua_setglobal(L, "_rule_functions");
     }
+
+    // 通过移动 LuaState 创建无效状态（用于测试 is_valid() == false 分支）
+    void invalidate_lua_state() {
+        // 移动内部的 LuaState，使其失效
+        ljre::LuaState& lua_state = get_lua_state();
+        ljre::LuaState temp = std::move(lua_state);
+        // temp 在这里析构，原 lua_state 现在无效
+        (void)temp;  // 抑制未使用警告
+    }
 };
 
 TEST_F(RuleEngineTest, CallMatchFunction_RuleFunctionTableNotFound_ReturnsError) {
@@ -2254,5 +2263,653 @@ TEST_F(RuleEngineTest, MatchRule_Vector_OnlyNonexistentRules) {
         EXPECT_FALSE(results.at(name).matched);
         EXPECT_TRUE(results.at(name).message.find("not found") != std::string::npos);
     }
+}
+
+// ============================================================================
+// 函数注册测试
+// ============================================================================
+
+// 测试用辅助函数
+static int test_add_42(lua_State* L) {
+    if (lua_gettop(L) < 1) {
+        lua_pushstring(L, "add_42: expected 1 argument");
+        lua_error(L);
+        return 0;
+    }
+
+    double value = lua_tonumber(L, 1);
+    lua_pushnumber(L, value + 42.0);
+    return 1;
+}
+
+static int test_multiply(lua_State* L) {
+    if (lua_gettop(L) < 2) {
+        lua_pushstring(L, "multiply: expected 2 arguments");
+        lua_error(L);
+        return 0;
+    }
+
+    double a = lua_tonumber(L, 1);
+    double b = lua_tonumber(L, 2);
+    lua_pushnumber(L, a * b);
+    return 1;
+}
+
+static int test_no_return(lua_State* /*L*/) {
+    // 不返回任何值
+    return 0;
+}
+
+static int test_return_multiple(lua_State* L) {
+    if (lua_gettop(L) < 1) {
+        lua_pushstring(L, "expected 1 argument");
+        lua_error(L);
+        return 0;
+    }
+
+    double value = lua_tonumber(L, 1);
+    lua_pushnumber(L, value * 2);
+    lua_pushnumber(L, value * 3);
+    return 2;
+}
+
+// 测试用的类
+class TestCalculator {
+public:
+    int add(lua_State* L) {
+        if (lua_gettop(L) < 2) {
+            lua_pushstring(L, "add: expected 2 arguments");
+            lua_error(L);
+            return 0;
+        }
+
+        double a = lua_tonumber(L, 1);
+        double b = lua_tonumber(L, 2);
+        double result = a + b;
+
+        lua_pushnumber(L, result);
+        return 1;
+    }
+
+    int get_value(lua_State* L) {
+        lua_pushnumber(L, value_);
+        return 1;
+    }
+
+    int set_value(lua_State* L) {
+        if (lua_gettop(L) < 1) {
+            lua_pushstring(L, "set_value: expected 1 argument");
+            lua_error(L);
+            return 0;
+        }
+
+        value_ = lua_tonumber(L, 1);
+        return 0;
+    }
+
+    // 静态分发器
+    static int add_dispatcher(lua_State* L) {
+        auto* self = static_cast<TestCalculator*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->add(L);
+    }
+
+    static int get_value_dispatcher(lua_State* L) {
+        auto* self = static_cast<TestCalculator*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->get_value(L);
+    }
+
+    static int set_value_dispatcher(lua_State* L) {
+        auto* self = static_cast<TestCalculator*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->set_value(L);
+    }
+
+private:
+    double value_ = 100.0;
+};
+
+TEST_F(RuleEngineTest, RegisterNormalFunction_Success) {
+    RuleEngine engine;
+    std::string error;
+
+    // 注册普通 C++ 函数
+    EXPECT_TRUE(engine.register_function("add_42", test_add_42, &error));
+    EXPECT_TRUE(error.empty());
+
+    // 验证函数已注册
+    EXPECT_TRUE(engine.has_function("add_42"));
+
+    // 创建测试规则来调用该函数
+    CreateRuleFile("test_add_42.lua", R"(
+        function match(data)
+            local result = ljre.add_42(data.value)
+            return result < 100, "result is " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_add_42", "test_data/rules/test_add_42.lua", &error));
+
+    // 测试数据
+    json test_json = {{"value", 50}};
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_add_42", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "result is 92");
+}
+
+TEST_F(RuleEngineTest, RegisterNormalFunction_OverwriteExisting) {
+    RuleEngine engine;
+    std::string error;
+
+    // 注册第一个函数
+    EXPECT_TRUE(engine.register_function("my_func", test_add_42, &error));
+    EXPECT_TRUE(engine.has_function("my_func"));
+
+    // 用同名函数覆盖
+    EXPECT_TRUE(engine.register_function("my_func", test_multiply, &error));
+    EXPECT_TRUE(engine.has_function("my_func"));
+
+    // 创建测试规则验证是新的函数
+    CreateRuleFile("test_overwrite.lua", R"(
+        function match(data)
+            local result = ljre.my_func(data.a, data.b)
+            return result == 6, "result is " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_overwrite", "test_data/rules/test_overwrite.lua", &error));
+
+    json test_json = {{"a", 2}, {"b", 3}};
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_overwrite", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "result is 6");
+}
+
+TEST_F(RuleEngineTest, RegisterClassMemberFunction_Success) {
+    RuleEngine engine;
+    std::string error;
+
+    TestCalculator calc;
+
+    // 注册类成员函数
+    EXPECT_TRUE(engine.register_function("add", &TestCalculator::add_dispatcher, &calc, &error));
+    EXPECT_TRUE(error.empty());
+
+    // 验证函数已注册
+    EXPECT_TRUE(engine.has_function("add"));
+
+    // 创建测试规则
+    CreateRuleFile("test_member_add.lua", R"(
+        function match(data)
+            local sum = ljre.add(data.x, data.y)
+            return sum == 15, "sum is " .. sum
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_member_add", "test_data/rules/test_member_add.lua", &error));
+
+    json test_json = {{"x", 7}, {"y", 8}};
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_member_add", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "sum is 15");
+}
+
+TEST_F(RuleEngineTest, RegisterClassMemberFunction_MultipleInstances) {
+    RuleEngine engine;
+    std::string error;
+
+    TestCalculator calc1;
+    TestCalculator calc2;
+
+    // 注册两个不同实例的同一个方法
+    EXPECT_TRUE(engine.register_function("get_value1", &TestCalculator::get_value_dispatcher, &calc1, &error));
+    EXPECT_TRUE(engine.register_function("get_value2", &TestCalculator::get_value_dispatcher, &calc2, &error));
+
+    // 创建测试规则
+    CreateRuleFile("test_two_instances.lua", R"(
+        function match(data)
+            local v1 = ljre.get_value1()
+            local v2 = ljre.get_value2()
+            return v1 == v2 and v1 == 100, "v1=" .. v1 .. ", v2=" .. v2
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_two_instances", "test_data/rules/test_two_instances.lua", &error));
+
+    json test_json = json::object();
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_two_instances", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, RegisterClassMemberFunction_ModifyState) {
+    RuleEngine engine;
+    std::string error;
+
+    TestCalculator calc;
+
+    // 注册多个成员函数
+    EXPECT_TRUE(engine.register_function("get_val", &TestCalculator::get_value_dispatcher, &calc, &error));
+    EXPECT_TRUE(engine.register_function("set_val", &TestCalculator::set_value_dispatcher, &calc, &error));
+
+    // 创建测试规则
+    CreateRuleFile("test_state_change.lua", R"(
+        function match(data)
+            local v1 = ljre.get_val()
+            ljre.set_val(200)
+            local v2 = ljre.get_val()
+            return v1 == 100 and v2 == 200, "v1=" .. v1 .. ", v2=" .. v2
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_state_change", "test_data/rules/test_state_change.lua", &error));
+
+    json test_json = json::object();
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_state_change", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "v1=100, v2=200");
+}
+
+TEST_F(RuleEngineTest, UnregisterFunction_ExistingFunction) {
+    RuleEngine engine;
+    std::string error;
+
+    // 注册函数
+    EXPECT_TRUE(engine.register_function("test_func", test_add_42, &error));
+    EXPECT_TRUE(engine.has_function("test_func"));
+
+    // 注销函数
+    EXPECT_TRUE(engine.unregister_function("test_func"));
+    EXPECT_FALSE(engine.has_function("test_func"));
+}
+
+TEST_F(RuleEngineTest, UnregisterFunction_NonExistentFunction) {
+    RuleEngine engine;
+
+    // 注销不存在的函数应该返回 false
+    EXPECT_FALSE(engine.unregister_function("nonexistent_func"));
+}
+
+TEST_F(RuleEngineTest, ClearRegisteredFunctions_AllFunctions) {
+    RuleEngine engine;
+    std::string error;
+
+    // 注册多个函数
+    EXPECT_TRUE(engine.register_function("func1", test_add_42, &error));
+    EXPECT_TRUE(engine.register_function("func2", test_multiply, &error));
+    EXPECT_TRUE(engine.register_function("func3", test_no_return, &error));
+
+    EXPECT_EQ(engine.get_registered_functions().size(), 3);
+
+    // 清空所有函数
+    engine.clear_registered_functions();
+
+    EXPECT_EQ(engine.get_registered_functions().size(), 0);
+    EXPECT_FALSE(engine.has_function("func1"));
+    EXPECT_FALSE(engine.has_function("func2"));
+    EXPECT_FALSE(engine.has_function("func3"));
+}
+
+TEST_F(RuleEngineTest, HasFunction_ExistingAndNonExisting) {
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_TRUE(engine.register_function("exists", test_add_42, &error));
+
+    EXPECT_TRUE(engine.has_function("exists"));
+    EXPECT_FALSE(engine.has_function("not_exists"));
+}
+
+TEST_F(RuleEngineTest, GetRegisteredFunctions_EmptyAndMultiple) {
+    RuleEngine engine;
+    std::string error;
+
+    // 初始状态应该为空
+    EXPECT_TRUE(engine.get_registered_functions().empty());
+
+    // 注册多个函数
+    EXPECT_TRUE(engine.register_function("func_c", test_add_42, &error));
+    EXPECT_TRUE(engine.register_function("func_a", test_multiply, &error));
+    EXPECT_TRUE(engine.register_function("func_b", test_no_return, &error));
+
+    auto functions = engine.get_registered_functions();
+    EXPECT_EQ(functions.size(), 3);
+
+    // 验证所有函数都在列表中
+    EXPECT_TRUE(std::find(functions.begin(), functions.end(), "func_a") != functions.end());
+    EXPECT_TRUE(std::find(functions.begin(), functions.end(), "func_b") != functions.end());
+    EXPECT_TRUE(std::find(functions.begin(), functions.end(), "func_c") != functions.end());
+}
+
+TEST_F(RuleEngineTest, FunctionInRule_NoReturnValue) {
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_TRUE(engine.register_function("no_return", test_no_return, &error));
+
+    CreateRuleFile("test_no_return.lua", R"(
+        function match(data)
+            ljre.no_return()
+            return true, "function called successfully"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_no_return", "test_data/rules/test_no_return.lua", &error));
+
+    json test_json = json::object();
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_no_return", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "function called successfully");
+}
+
+TEST_F(RuleEngineTest, FunctionInRule_MultipleReturnValues) {
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_TRUE(engine.register_function("return_multiple", test_return_multiple, &error));
+
+    CreateRuleFile("test_multiple_return.lua", R"(
+        function match(data)
+            local r1, r2 = ljre.return_multiple(10)
+            return r1 == 20 and r2 == 30, "r1=" .. r1 .. ", r2=" .. r2
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_multiple_return", "test_data/rules/test_multiple_return.lua", &error));
+
+    json test_json = json::object();
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_multiple_return", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "r1=20, r2=30");
+}
+
+TEST_F(RuleEngineTest, FunctionInRule_ErrorHandling) {
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_TRUE(engine.register_function("multiply", test_multiply, &error));
+
+    // 创建一个会调用错误的规则（参数不足）
+    CreateRuleFile("test_func_error.lua", R"(
+        function match(data)
+            local ok, result = pcall(function()
+                return ljre.multiply(5)  -- 只有一个参数，应该报错
+            end)
+            return not ok, "error handled: " .. tostring(result)
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_func_error", "test_data/rules/test_func_error.lua", &error));
+
+    json test_json = json::object();
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_func_error", adapter, result, &error));
+    EXPECT_TRUE(result.matched);  // 错误被正确处理
+}
+
+TEST_F(RuleEngineTest, MultipleFunctionsInSameRule) {
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_TRUE(engine.register_function("add_42", test_add_42, &error));
+    EXPECT_TRUE(engine.register_function("multiply", test_multiply, &error));
+
+    CreateRuleFile("test_multi_funcs.lua", R"(
+        function match(data)
+            local v1 = ljre.add_42(10)
+            local v2 = ljre.multiply(v1, 2)
+            return v2 == 104, "v1=" .. v1 .. ", v2=" .. v2
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_multi_funcs", "test_data/rules/test_multi_funcs.lua", &error));
+
+    json test_json = json::object();
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_multi_funcs", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "v1=52, v2=104");
+}
+
+TEST_F(RuleEngineTest, RegisterFunction_PersistAcrossRules) {
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_TRUE(engine.register_function("add_42", test_add_42, &error));
+
+    // 创建多个规则使用同一个函数
+    CreateRuleFile("rule1.lua", R"(
+        function match(data)
+            local r = ljre.add_42(data.x)
+            return r == 52, "result=" .. r
+        end
+    )");
+
+    CreateRuleFile("rule2.lua", R"(
+        function match(data)
+            local r = ljre.add_42(data.y)
+            return r == 62, "result=" .. r
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/rule1.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/rule2.lua", &error));
+
+    json test_json = {{"x", 10}, {"y", 20}};
+    JsonAdapter adapter(test_json);
+
+    MatchResult result1, result2;
+    EXPECT_TRUE(engine.match_rule("rule1", adapter, result1, &error));
+    EXPECT_TRUE(engine.match_rule("rule2", adapter, result2, &error));
+
+    EXPECT_TRUE(result1.matched);
+    EXPECT_EQ(result1.message, "result=52");
+
+    EXPECT_TRUE(result2.matched);
+    EXPECT_EQ(result2.message, "result=62");
+}
+
+TEST_F(RuleEngineTest, LjreTableIsolation) {
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_TRUE(engine.register_function("my_func", test_add_42, &error));
+
+    // 验证 ljre 表中的函数不会被全局访问到
+    CreateRuleFile("test_isolation.lua", R"(
+        function match(data)
+            -- 尝试直接访问 my_func（不通过 ljre）
+            local direct_type = type(my_func)
+
+            -- 通过 ljre 访问
+            local ljre_type = type(ljre.my_func)
+
+            return direct_type == "nil" and ljre_type == "function",
+                   "direct=" .. direct_type .. ", ljre=" .. ljre_type
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_isolation", "test_data/rules/test_isolation.lua", &error));
+
+    json test_json = json::object();
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_isolation", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "direct=nil, ljre=function");
+}
+
+TEST_F(RuleEngineTest, CallNonExistentFunction) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("test_call_nonexist.lua", R"(
+        function match(data)
+            local ok, result = pcall(function()
+                return ljre.nonexistent_func(10)
+            end)
+            return not ok, "error=" .. tostring(result)
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_call_nonexist", "test_data/rules/test_call_nonexist.lua", &error));
+
+    json test_json = json::object();
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_call_nonexist", adapter, result, &error));
+    EXPECT_TRUE(result.matched);  // 错误被 pcall 捕获
+    EXPECT_TRUE(result.message.find("attempt to call") != std::string::npos ||
+                result.message.find("nil value") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, RegisterFunction_ThenClear_ThenReuse) {
+    RuleEngine engine;
+    std::string error;
+
+    // 注册函数
+    EXPECT_TRUE(engine.register_function("temp_func", test_add_42, &error));
+    EXPECT_TRUE(engine.has_function("temp_func"));
+
+    // 清空
+    engine.clear_registered_functions();
+    EXPECT_FALSE(engine.has_function("temp_func"));
+
+    // 重新注册同名函数
+    EXPECT_TRUE(engine.register_function("temp_func", test_multiply, &error));
+    EXPECT_TRUE(engine.has_function("temp_func"));
+
+    // 验证新函数生效
+    CreateRuleFile("test_reuse.lua", R"(
+        function match(data)
+            local r = ljre.temp_func(data.a, data.b)
+            return r == 6, "result=" .. r
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("test_reuse", "test_data/rules/test_reuse.lua", &error));
+
+    json test_json = {{"a", 2}, {"b", 3}};
+    JsonAdapter adapter(test_json);
+    MatchResult result;
+
+    EXPECT_TRUE(engine.match_rule("test_reuse", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "result=6");
+}
+
+// ============================================================================
+// 函数注册 - 无效状态测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, RegisterFunction_InvalidState_ReturnsFalse) {
+    RuleEngineInternalTest engine;
+    std::string error;
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 尝试注册普通 C++ 函数
+    EXPECT_FALSE(engine.register_function("test_func", test_add_42, &error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_NE(error.find("invalid"), std::string::npos);
+}
+
+TEST_F(RuleEngineTest, RegisterClassMemberFunction_InvalidState_ReturnsFalse) {
+    RuleEngineInternalTest engine;
+    std::string error;
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 尝试注册类成员函数
+    TestCalculator calc;
+    EXPECT_FALSE(engine.register_function("add", &TestCalculator::add_dispatcher, &calc, &error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_NE(error.find("invalid"), std::string::npos);
+}
+
+TEST_F(RuleEngineTest, UnregisterFunction_InvalidState_ReturnsFalse) {
+    RuleEngineInternalTest engine;
+
+    // 先注册一个函数
+    std::string error;
+    ASSERT_TRUE(engine.register_function("test_func", test_add_42, &error));
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 尝试注销函数
+    EXPECT_FALSE(engine.unregister_function("test_func"));
+}
+
+TEST_F(RuleEngineTest, ClearRegisteredFunctions_InvalidState_DoesNothing) {
+    RuleEngineInternalTest engine;
+
+    // 先注册一些函数
+    std::string error;
+    ASSERT_TRUE(engine.register_function("func1", test_add_42, &error));
+    ASSERT_TRUE(engine.register_function("func2", test_multiply, &error));
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 清空注册函数（不应该崩溃，只是静默失败）
+    engine.clear_registered_functions();
+}
+
+TEST_F(RuleEngineTest, HasFunction_InvalidState_ReturnsFalse) {
+    RuleEngineInternalTest engine;
+
+    // 先注册一个函数
+    std::string error;
+    ASSERT_TRUE(engine.register_function("test_func", test_add_42, &error));
+    ASSERT_TRUE(engine.has_function("test_func"));
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 检查函数是否存在（应该返回 false）
+    EXPECT_FALSE(engine.has_function("test_func"));
+}
+
+TEST_F(RuleEngineTest, GetRegisteredFunctions_InvalidState_ReturnsEmpty) {
+    RuleEngineInternalTest engine;
+
+    // 先注册一些函数
+    std::string error;
+    ASSERT_TRUE(engine.register_function("func1", test_add_42, &error));
+    ASSERT_TRUE(engine.register_function("func2", test_multiply, &error));
+
+    // 使 Lua 状态无效
+    engine.invalidate_lua_state();
+
+    // 获取已注册函数列表（应该返回空列表）
+    auto functions = engine.get_registered_functions();
+    EXPECT_TRUE(functions.empty());
 }
 

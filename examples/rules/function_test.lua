@@ -2,10 +2,10 @@
 -- 测试从 Lua 调用 C++ 注册的函数
 
 function match(data)
-    -- 测试普通C函数：获取时间戳
+    -- 测试普通C++函数：获取时间戳
     local time_ms = ljre.get_time_ms()
 
-    -- 测试普通C函数：打印日志
+    -- 测试普通C++函数：打印日志
     ljre.log("Processing data at timestamp: " .. time_ms)
 
     -- 测试类成员函数：加法运算

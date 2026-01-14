@@ -128,9 +128,18 @@ LuaJIT Rule Engine 是一个基于 C++17 和 LuaJIT-2.1.0-beta3 的高性能规�
 │ + has_rule(name): bool                                   │
 │ + get_rule_count(): size_t                               │
 │ + clear_rules(): void                                    │
+│ ├─────────────────────────────────────────────────────┤
+│ │ C++ 函数注册功能                                        │
+│ + register_function(name, func, error): bool             │
+│ + register_function(name, dispatcher, instance, error): bool│
+│ + unregister_function(name): bool                        │
+│ + clear_registered_functions(): void                     │
+│ + has_function(name): bool                               │
+│ + get_registered_functions(): vector<string>             │
 ├─────────────────────────────────────────────────────────┤
 │ - call_match_function(name, adapter, result): bool       │
 │ - init_rule_functions_table(): void                      │
+│ - ensure_ljre_table(): void                              │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -139,6 +148,110 @@ LuaJIT Rule Engine 是一个基于 C++17 和 LuaJIT-2.1.0-beta3 的高性能规�
 1. **禁止拷贝**：使用 `= delete` 禁止拷贝构造和赋值，确保唯一性
 2. **Lua 函数缓存**：将 Lua 函数引用存储在 Lua Registry 中，避免重复查找
 3. **错误传播**：通过可选的 `error_msg` 参数传递详细错误信息
+
+**C++ 函数注册机制**：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                 C++ 函数注册架构                          │
+└─────────────────────────────────────────────────────────┘
+
+全局 ljre 表（Lua 全局命名空间）:
+  Key: "ljre"
+  Value: {
+    ["get_time_ms"] = <C closure>,
+    ["log"] = <C closure>,
+    ["add"] = <C closure with upvalue>,
+    ...
+  }
+
+注册流程:
+  1. ensure_ljre_table() - 确保 ljre 全局表存在
+  2. lua_getglobal(L, "ljre") - 获取表到栈顶
+  3. lua_pushstring(L, function_name) - 压入函数名
+  4. lua_pushlightuserdata(L, instance) - 压入实例指针（仅成员函数）
+  5. lua_pushcclosure(L, dispatcher, n) - 创建闭包
+  6. lua_rawset(L, -3) - ljre[function_name] = closure
+
+两种注册方式:
+  1. 普通 C++ 函数:
+     - 直接使用函数指针
+     - 无 upvalue
+     - 使用 lua_pushcclosure(L, func, 0)
+
+  2. 类成员函数:
+     - 需要静态分发器
+     - 使用 lua_pushlightuserdata 传递实例指针
+     - 实例指针存储在 upvalue[1]
+     - 使用 lua_pushcclosure(L, dispatcher, 1)
+```
+
+**函数注册使用示例**：
+
+```cpp
+// 1. 普通 C++ 函数
+int get_current_time_ms(lua_State* L) {
+    auto now = std::chrono::system_clock::now();
+    auto millis = /* 计算毫秒 */;
+    lua_pushnumber(L, static_cast<lua_Number>(millis));
+    return 1;  // 返回 1 个值
+}
+
+RuleEngine engine;
+std::string error;
+engine.register_function("get_time_ms", get_current_time_ms, &error);
+
+// 2. 类成员函数
+class MathHelper {
+public:
+    int add(lua_State* L) {
+        double a = lua_tonumber(L, 1);
+        double b = lua_tonumber(L, 2);
+        lua_pushnumber(L, a + b);
+        return 1;
+    }
+
+    // 静态分发器（必需）
+    static int add_dispatcher(lua_State* L) {
+        auto* self = static_cast<MathHelper*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->add(L);
+    }
+};
+
+MathHelper helper;
+engine.register_function("add", &MathHelper::add_dispatcher, &helper, &error);
+
+// 3. 在 Lua 规则中调用
+-- function_test.lua
+function match(data)
+    local time = ljre.get_time_ms()
+    ljre.log("Processing at: " .. time)
+    local sum = ljre.add(data.value1, data.value2)
+    return sum > 100, "Sum is " .. sum
+end
+```
+
+**函数管理**：
+
+```cpp
+// 检查函数是否已注册
+bool has = engine.has_function("get_time_ms");
+
+// 获取所有已注册的函数名
+std::vector<std::string> funcs = engine.get_registered_functions();
+
+// 注销单个函数
+engine.unregister_function("log");
+
+// 清空所有已注册的函数
+engine.clear_registered_functions();
+```
+
+**优势**：
+- **扩展性**：允许 Lua 规则调用 C++ 功能，弥补禁用危险库后的功能缺失
+- **类型安全**：通过静态分发器模式，支持类成员函数注册
+- **灵活管理**：支持运行时动态注册、注销、查询函数
+- **命名空间隔离**：所有函数注册在全局 `ljre` 表中，避免污染全局命名空间
 
 ### 3.2 LuaState (Lua 状态管理)
 
@@ -1027,11 +1140,11 @@ luajit-rule-engine
           │  (多组件协同测试)     │
           └──────────────────────┘
       ┌──────────────────────────────────┐
-      │     Unit Tests (单元测试)         │  213 个测试用例
+      │     Unit Tests (单元测试)         │  251 个测试用例
       │  - LuaState: 52                  │  > 90%
       │  - LuaStackGuard: 17             │
       │  - DataAdapter/JsonAdapter: 55   │
-      │  - RuleEngine: 89                │
+      │  - RuleEngine: 127               │
       └──────────────────────────────────┘
 
 测试工具:
@@ -1049,10 +1162,10 @@ LuaState                 52         ≥90%
 LuaStackGuard            17         ≥90%
 DataAdapter              36         ≥90%
 JsonAdapter              55         ≥90%  (+9 深度限制测试)
-RuleEngine               89         ≥90%  (+11 JIT 控制测试)
+RuleEngine              127         ≥90%  (+11 JIT 控制测试、+30 函数注册测试)
 Integration              15         ≥80%  (+4 深度限制测试)
 ────────────────────────────────────────
-总计                     228        ≥85%
+总计                     266        ≥85%
 ```
 
 ---
@@ -1132,8 +1245,8 @@ LuaJIT Rule Engine 是一个设计精良、实现规范的高性能规则引擎�
 1. **高性能**：LuaJIT JIT 编译，接近原生代码执行速度
 2. **动态配置**：支持规则热更新，无需重启服务
 3. **安全可靠**：沙箱环境 + 栈守卫，确保运行安全
-4. **易于扩展**：适配器模式支持多种数据格式
-5. **高测试覆盖**：228+ 测试用例，覆盖率 ≥85%
+4. **易于扩展**：适配器模式支持多种数据格式；支持 C++ 函数注册扩展功能
+5. **高测试覆盖**：266+ 测试用例，覆盖率 ≥85%
 
 ### 14.2 架构特点
 

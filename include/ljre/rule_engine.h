@@ -138,11 +138,11 @@ public:
         LuaStackGuard guard(L);
 
         // 确保 ljre 表存在
-        if (!ensure_ljre_table(error_msg)) {
-            return false;
-        }
+        ensure_ljre_table();
 
-        // ljre 表现在在栈顶
+        // 获取 ljre 表到栈顶
+        lua_getglobal(L, "ljre");
+
         // 设置 ljre[function_name] = closure
         lua_pushstring(L, function_name.c_str());
         lua_pushlightuserdata(L, instance);  // 压入 upvalue
@@ -187,8 +187,8 @@ private:
                              MatchResult& result,
                              std::string* error_msg);
 
-    // 内部方法：确保 ljre 全局表存在
-    bool ensure_ljre_table(std::string* error_msg);
+    // 内部方法：确保 ljre 全局表存在（保持栈平衡）
+    void ensure_ljre_table();
 };
 
 } // namespace ljre

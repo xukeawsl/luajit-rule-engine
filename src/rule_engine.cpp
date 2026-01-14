@@ -437,11 +437,11 @@ bool RuleEngine::register_function(const std::string& function_name,
     LuaStackGuard guard(L);
 
     // 确保 ljre 表存在
-    if (!ensure_ljre_table(error_msg)) {
-        return false;
-    }
+    ensure_ljre_table();
 
-    // ljre 表现在在栈顶
+    // 获取 ljre 表到栈顶
+    lua_getglobal(L, "ljre");
+
     // 设置 ljre[function_name] = function
     lua_pushstring(L, function_name.c_str());
     lua_pushcfunction(L, function_ptr);
@@ -459,11 +459,11 @@ bool RuleEngine::unregister_function(const std::string& function_name) {
     LuaStackGuard guard(L);
 
     // 确保 ljre 表存在
-    if (!ensure_ljre_table(nullptr)) {
-        return false;
-    }
+    ensure_ljre_table();
 
-    // ljre 表现在在栈顶
+    // 获取 ljre 表到栈顶
+    lua_getglobal(L, "ljre");
+
     // 检查函数是否存在
     lua_pushstring(L, function_name.c_str());
     lua_rawget(L, -2);
@@ -504,11 +504,11 @@ bool RuleEngine::has_function(const std::string& function_name) {
     LuaStackGuard guard(L);
 
     // 确保 ljre 表存在
-    if (!ensure_ljre_table(nullptr)) {
-        return false;
-    }
+    ensure_ljre_table();
 
-    // ljre 表现在在栈顶
+    // 获取 ljre 表到栈顶
+    lua_getglobal(L, "ljre");
+
     // 检查 function_name 是否存在
     lua_pushstring(L, function_name.c_str());
     lua_rawget(L, -2);
@@ -529,11 +529,10 @@ std::vector<std::string> RuleEngine::get_registered_functions() {
     LuaStackGuard guard(L);
 
     // 确保 ljre 表存在
-    if (!ensure_ljre_table(nullptr)) {
-        return functions;
-    }
+    ensure_ljre_table();
 
-    // ljre 表现在在栈顶，遍历表
+    // 获取 ljre 表到栈顶，遍历表
+    lua_getglobal(L, "ljre");
     lua_pushnil(L);  // 第一个 key
     while (lua_next(L, -2) != 0) {
         // -1 => value, -2 => key
@@ -546,30 +545,20 @@ std::vector<std::string> RuleEngine::get_registered_functions() {
     return functions;
 }
 
-bool RuleEngine::ensure_ljre_table(std::string* error_msg) {
+void RuleEngine::ensure_ljre_table() {
     lua_State* L = _lua_state.get();
+    LuaStackGuard guard(L);
 
     // 检查 ljre 表是否存在
     lua_getglobal(L, "ljre");
     if (lua_istable(L, -1)) {
-        return true;  // 表已存在
+        return;  // 表已存在，栈守卫自动清理
     }
 
     // 表不存在，创建一个
     lua_pop(L, 1);  // 弹出非 table 值（可能是 nil）
     lua_createtable(L, 0, 0);  // 创建新 table
     lua_setglobal(L, "ljre");
-
-    // 重新获取表以验证
-    lua_getglobal(L, "ljre");
-    if (!lua_istable(L, -1)) {
-        if (error_msg) {
-            *error_msg = "Failed to create ljre table";
-        }
-        return false;
-    }
-
-    return true;
 }
 
 } // namespace ljre
