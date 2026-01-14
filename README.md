@@ -769,9 +769,9 @@ bool flush_jit();
 
 允许将 C++ 函数注册到 Lua 的全局 `ljre` 命名空间，使得 Lua 规则文件可以调用这些函数。这对于禁用了某些 Lua 标准库（如 `os` 库）的情况下特别有用。
 
-**注册普通 C 函数**：
+**注册普通 C++ 函数**：
 ```cpp
-// C 函数签名必须是 int (*)(lua_State* L)，返回值为返回值个数
+// C++ 函数签名必须是 int (*)(lua_State* L)，返回值为返回值个数
 int get_current_time_ms(lua_State* L) {
     auto now = std::chrono::system_clock::now();
     auto duration = now.time_since_epoch();
@@ -810,7 +810,7 @@ engine.register_function("add", &MathHelper::add_dispatcher, &helper, &error);
 在 Lua 规则中调用：
 ```lua
 function match(data)
-    -- 调用注册的 C 函数
+    -- 调用注册的 C++ 函数
     local time = ljre.get_time_ms()
     ljre.log("Processing at: " .. time)
 
