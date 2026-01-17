@@ -371,8 +371,10 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
     // 从规则函数表中获取对应规则的match函数
     lua_getglobal(L, "_rule_functions");
     if (!lua_istable(L, -1)) {
+        result.matched = false;
+        result.message = "Rule function table not found";
         if (error_msg) {
-            *error_msg = "Rule function table not found";
+            *error_msg = result.message;
         }
         return false;
     }
@@ -382,29 +384,47 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
     lua_remove(L, -2);  // 移除 _rule_functions 表
 
     if (!lua_isfunction(L, -1)) {
+        result.matched = false;
+        result.message = "Rule '" + rule_name + "' match function not found";
         if (error_msg) {
-            *error_msg = "Rule '" + rule_name + "' match function not found";
+            *error_msg = result.message;
         }
         return false;
     }
 
     // 将数据压入栈顶
     if (!data_adapter.push_to_lua(L, error_msg)) {
+        result.matched = false;
+        // 注意：data_adapter.push_to_lua 可能已经设置了 error_msg
+        // 如果没有设置，使用默认错误信息
+        if (error_msg && error_msg->empty()) {
+            *error_msg = "Failed to push data to Lua";
+            result.message = *error_msg;
+        } else if (error_msg) {
+            result.message = *error_msg;
+        } else {
+            result.message = "Failed to push data to Lua";
+        }
         return false;
     }
 
     // 调用match函数，1个参数，2个返回值
     if (lua_pcall(L, 1, 2, 0) != LUA_OK) {
+        // Lua 调用失败（包括 C++ 异常），标记为匹配失败
+        result.matched = false;
+        result.message = "Failed to call match: " + _lua_state.get_error_string();
         if (error_msg) {
-            *error_msg = _lua_state.get_error_string();
+            *error_msg = result.message;
         }
         return false;
     }
 
     // 获取第一个返回值：是否匹配成功
     if (!lua_isboolean(L, -2)) {
+        result.matched = false;
+        result.message = "First return value of 'match' must be boolean";
         if (error_msg) {
-            *error_msg = "First return value of 'match' must be boolean";
+            *error_msg = result.message;
         }
         return false;
     }

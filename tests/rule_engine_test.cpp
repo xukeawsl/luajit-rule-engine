@@ -2367,6 +2367,79 @@ private:
     double value_ = 100.0;
 };
 
+// ============================================================================
+// C++ 异常处理测试辅助函数
+// ============================================================================
+
+// 会抛出 C++ 异常的函数（危险，会导致崩溃）
+static int test_throws_std_exception(lua_State* /*L*/) {
+    throw std::runtime_error("C++ std::exception thrown");
+    return 0;
+}
+
+// 安全的函数：内部捕获异常并转换为 Lua 错误
+static int test_catches_exception(lua_State* L) {
+    try {
+        if (lua_gettop(L) < 1) {
+            throw std::runtime_error("expected 1 argument");
+        }
+
+        double value = lua_tonumber(L, 1);
+        if (value < 0) {
+            throw std::runtime_error("value must be non-negative");
+        }
+
+        lua_pushnumber(L, value * 2);
+        return 1;
+
+    } catch (const std::exception& e) {
+        // 将 C++ 异常转换为 Lua 错误
+        lua_pushstring(L, e.what());
+        lua_error(L);
+        return 0;  // 不会执行到这里
+    }
+}
+
+// 用于测试异常处理的类
+class ExceptionTestClass {
+public:
+    // 成员函数抛出 C++ 异常（危险）
+    int throws_exception(lua_State* /*L*/) {
+        throw std::runtime_error("Member function throws exception");
+        return 0;
+    }
+
+    // 成员函数安全地捕获异常
+    int catches_exception(lua_State* L) {
+        try {
+            if (lua_gettop(L) < 1) {
+                throw std::runtime_error("expected 1 argument");
+            }
+
+            double value = lua_tonumber(L, 1);
+            lua_pushnumber(L, value + this->offset_);
+            return 1;
+
+        } catch (const std::exception& e) {
+            lua_pushstring(L, e.what());
+            lua_error(L);
+            return 0;
+        }
+    }
+
+    static int throws_exception_dispatcher(lua_State* L) {
+        auto* self = static_cast<ExceptionTestClass*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->throws_exception(L);
+    }
+
+    static int catches_exception_dispatcher(lua_State* L) {
+        auto* self = static_cast<ExceptionTestClass*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->catches_exception(L);
+    }
+
+private:
+    double offset_ = 100.0;
+};
 TEST_F(RuleEngineTest, RegisterNormalFunction_Success) {
     RuleEngine engine;
     std::string error;
@@ -2911,5 +2984,318 @@ TEST_F(RuleEngineTest, GetRegisteredFunctions_InvalidState_ReturnsEmpty) {
     // 获取已注册函数列表（应该返回空列表）
     auto functions = engine.get_registered_functions();
     EXPECT_TRUE(functions.empty());
+}
+
+// ============================================================================
+// C++ 异常处理测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, CppFunction_ThrowsStdException_DoesNotCrash) {
+    // 注意：LuaJIT 实际上可以捕获 C++ 异常并将其转换为 Lua 错误
+    // 但是错误信息不够详细（只有 "C++ exception" 字符串）
+    // 因此仍然强烈建议在 C++ 函数内部捕获异常并手动转换
+
+    RuleEngine engine;
+    std::string error;
+
+    // 注册会抛出 C++ 异常的函数（不推荐这样做）
+    ASSERT_TRUE(engine.register_function("throws_exception", test_throws_std_exception, &error));
+
+    // 创建规则，使用 pcall 保护调用
+    CreateRuleFile("test_exception_protection.lua", R"(
+        function match(data)
+            -- 使用 pcall 保护可能抛出 C++ 异常的函数调用
+            -- LuaJIT 可以捕获 C++ 异常，但错误信息不够详细（只有 "C++ exception"）
+            -- 这里演示 pcall 如何捕获 C++ 异常
+            local ok, result = pcall(function()
+                return ljre.throws_exception()
+            end)
+
+            if not ok then
+                return false, "Function call failed: " .. tostring(result)
+            end
+
+            return true, "Success"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("exception_rule", "test_data/rules/test_exception_protection.lua", &error));
+
+    json data = {{"value", 42}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    // LuaJIT 会捕获 C++ 异常并转换为 Lua 错误
+    bool success = engine.match_rule("exception_rule", adapter, result, &error);
+
+    // 验证：LuaJIT 捕获了 C++ 异常并转换为 Lua 错误
+    EXPECT_TRUE(success);
+    EXPECT_FALSE(result.matched);
+    EXPECT_TRUE(result.message.find("C++ exception") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, CppFunction_ThrowsException_WithoutPcall_FailsMatchRule) {
+    // 测试：直接调用抛出 C++ 异常的函数（不使用 pcall）
+    // 验证：当不使用 pcall 时，C++ 异常会导致 match_rule 调用失败
+
+    RuleEngine engine;
+    std::string error;
+
+    // 注册会抛出 C++ 异常的函数
+    ASSERT_TRUE(engine.register_function("throws_exception", test_throws_std_exception, &error));
+
+    // 创建规则，直接调用抛异常的函数（不使用 pcall）
+    CreateRuleFile("test_exception_no_pcall.lua", R"(
+        function match(data)
+            -- 直接调用会抛出 C++ 异常的函数，不使用 pcall 保护
+            local result = ljre.throws_exception()
+            return true, "Success: " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("exception_rule", "test_data/rules/test_exception_no_pcall.lua", &error));
+
+    json data = {{"value", 42}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    // 当不使用 pcall 时，C++ 异常会导致 match_rule 调用失败
+    bool success = engine.match_rule("exception_rule", adapter, result, &error);
+
+    // 验证：match_rule 调用失败，错误信息同时存在于 result.message 和 error 参数中
+    EXPECT_FALSE(success);  // match_rule 调用失败
+    EXPECT_FALSE(result.matched);  // 结果标记为未匹配
+    EXPECT_FALSE(result.message.empty());  // result.message 包含错误信息
+    EXPECT_FALSE(error.empty());  // error 参数也包含错误信息
+    EXPECT_EQ(result.message, error);  // 两者应该相同
+    EXPECT_TRUE(result.message.find("Failed to call match") != std::string::npos);
+    EXPECT_TRUE(result.message.find("C++") != std::string::npos || result.message.find("exception") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, CppFunction_CatchesException_Safely) {
+    // 测试安全的异常处理：C++ 函数内部捕获异常并转换为 Lua 错误
+    RuleEngine engine;
+    std::string error;
+
+    // 注册安全捕获异常的函数
+    ASSERT_TRUE(engine.register_function("safe_double", test_catches_exception, &error));
+
+    // 测试用例 1: 正常输入
+    CreateRuleFile("test_safe_exception_1.lua", R"(
+        function match(data)
+            local result = ljre.safe_double(data.value)
+            return true, "Result: " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("safe_rule_1", "test_data/rules/test_safe_exception_1.lua", &error));
+
+    json data1 = {{"value", 21}};
+    JsonAdapter adapter1(data1);
+
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("safe_rule_1", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+    EXPECT_TRUE(result1.message.find("42") != std::string::npos);
+
+    // 测试用例 2: 负数输入（触发异常）
+    CreateRuleFile("test_safe_exception_2.lua", R"(
+        function match(data)
+            local ok, result = pcall(function()
+                return ljre.safe_double(data.value)
+            end)
+
+            if not ok then
+                return false, "Error: " .. result
+            end
+
+            return true, "Result: " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("safe_rule_2", "test_data/rules/test_safe_exception_2.lua", &error));
+
+    json data2 = {{"value", -5}};
+    JsonAdapter adapter2(data2);
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("safe_rule_2", adapter2, result2, &error));
+    EXPECT_FALSE(result2.matched);
+    EXPECT_TRUE(result2.message.find("non-negative") != std::string::npos);
+
+    // 测试用例 3: 缺少参数（触发异常）
+    CreateRuleFile("test_safe_exception_3.lua", R"(
+        function match(data)
+            local ok, result = pcall(function()
+                return ljre.safe_double()
+            end)
+
+            if not ok then
+                return false, "Error: " .. result
+            end
+
+            return true, "Result: " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("safe_rule_3", "test_data/rules/test_safe_exception_3.lua", &error));
+
+    json data3 = {{"value", 10}};
+    JsonAdapter adapter3(data3);
+
+    MatchResult result3;
+    ASSERT_TRUE(engine.match_rule("safe_rule_3", adapter3, result3, &error));
+    EXPECT_FALSE(result3.matched);
+    EXPECT_TRUE(result3.message.find("expected 1 argument") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, CppMemberFunction_CatchesException_Safely) {
+    // 测试类成员函数的异常处理
+    RuleEngine engine;
+    std::string error;
+
+    ExceptionTestClass obj;
+    ASSERT_TRUE(engine.register_function("safe_add", &ExceptionTestClass::catches_exception_dispatcher, &obj, &error));
+
+    // 正常调用
+    CreateRuleFile("test_member_safe_exception.lua", R"(
+        function match(data)
+            local result = ljre.safe_add(data.value)
+            return true, "Result: " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("member_safe_rule", "test_data/rules/test_member_safe_exception.lua", &error));
+
+    json data = {{"value", 50}};
+    JsonAdapter adapter(data);
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("member_safe_rule", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_TRUE(result.message.find("150") != std::string::npos);  // 50 + 100 (offset)
+}
+
+TEST_F(RuleEngineTest, CppFunction_ExceptionHandlingBestPractice) {
+    // 测试异常处理的最佳实践
+    RuleEngine engine;
+    std::string error;
+
+    // 注册一个安全处理异常的函数
+    ASSERT_TRUE(engine.register_function("safe_double", test_catches_exception, &error));
+
+    // 最佳实践：在 Lua 规则中使用 pcall 保护
+    CreateRuleFile("test_exception_best_practice.lua", R"(
+        function match(data)
+            -- 最佳实践 1: 使用 pcall 捕获函数调用中的错误
+            local ok, result = pcall(function()
+                if data.value < 0 then
+                    error("value must be non-negative")  -- Lua 错误
+                end
+                return ljre.safe_double(data.value)
+            end)
+
+            if not ok then
+                return false, "Calculation failed: " .. tostring(result)
+            end
+
+            -- 最佳实践 2: 验证返回值
+            if type(result) ~= "number" then
+                return false, "Invalid result type"
+            end
+
+            return true, "Result: " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("best_practice_rule", "test_data/rules/test_exception_best_practice.lua", &error));
+
+    // 测试正常情况
+    json data1 = {{"value", 10}};
+    JsonAdapter adapter1(data1);
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("best_practice_rule", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // 测试错误情况（负数）
+    json data2 = {{"value", -10}};
+    JsonAdapter adapter2(data2);
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("best_practice_rule", adapter2, result2, &error));
+    EXPECT_FALSE(result2.matched);
+    EXPECT_TRUE(result2.message.find("failed") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, CppFunction_NoPcall_DirectCall) {
+    // 测试不使用 pcall 的直接调用（函数内部捕获异常）
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("safe_func", test_catches_exception, &error));
+
+    // 规则直接调用函数，不使用 pcall
+    CreateRuleFile("test_direct_call.lua", R"(
+        function match(data)
+            -- 函数内部会捕获异常并转换为 Lua 错误
+            -- 由于使用了 lua_error，这个错误会向上传播
+            local result = ljre.safe_func(data.value)
+            return true, "Result: " .. result
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("direct_call_rule", "test_data/rules/test_direct_call.lua", &error));
+
+    // 正常情况：应该成功
+    json data1 = {{"value", 5}};
+    JsonAdapter adapter1(data1);
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("direct_call_rule", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+    EXPECT_TRUE(result1.message.find("10") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, CppFunction_MultipleExceptionTypes) {
+    // 测试不同类型的异常处理
+    RuleEngine engine;
+    std::string error;
+
+    // 注册多个安全的函数
+    ASSERT_TRUE(engine.register_function("func1", test_catches_exception, &error));
+    ASSERT_TRUE(engine.register_function("func2", test_add_42, &error));
+
+    CreateRuleFile("test_multiple_exceptions.lua", R"(
+        function match(data)
+            local results = {}
+
+            -- 调用多个函数，每个都可能抛出异常
+            local ok1, r1 = pcall(function()
+                return ljre.func1(data.value)
+            end)
+
+            local ok2, r2 = pcall(function()
+                return ljre.func2(data.value)
+            end)
+
+            if not ok1 then
+                return false, "func1 failed: " .. r1
+            end
+
+            if not ok2 then
+                return false, "func2 failed: " .. r2
+            end
+
+            return true, "func1=" .. r1 .. ", func2=" .. r2
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("multi_exception_rule", "test_data/rules/test_multiple_exceptions.lua", &error));
+
+    json data = {{"value", 10}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("multi_exception_rule", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_TRUE(result.message.find("20") != std::string::npos);  // func1: 10 * 2
+    EXPECT_TRUE(result.message.find("52") != std::string::npos);  // func2: 10 + 42
 }
 

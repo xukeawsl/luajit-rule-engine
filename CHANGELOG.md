@@ -6,6 +6,45 @@
 
 ### 新增 (Added)
 
+#### C++ 异常处理测试和文档
+- **异常处理测试**: 新增 7 个 C++ 异常处理相关测试用例
+  - C++ 函数抛出异常的演示测试（使用 pcall 捕获）
+  - C++ 函数抛出异常测试（不使用 pcall，验证 match_rule 失败）
+  - C++ 函数安全捕获异常测试（3个场景：正常输入、负数、缺少参数）
+  - 类成员函数异常处理测试
+  - 异常处理最佳实践测试
+  - 直接调用（不使用 pcall）测试
+  - 多函数异常处理测试
+- **重要发现**: LuaJIT 可以捕获 C++ 异常，程序不会崩溃！
+  - 通过实际测试验证：注册的 C++ 函数抛出异常不会导致程序崩溃
+  - LuaJIT 将 C++ 异常转换为简短的错误信息 `"C++ exception"`
+  - 使用 pcall 和不使用 pcall 的行为差异已文档化
+- **文档更新**: 在 README.md 和 ARCHITECTURE.md 中添加详细的异常处理说明
+  - 说明 LuaJIT 可以安全捕获 C++ 异常
+  - 提供两种场景（使用/不使用 pcall）的详细对比
+  - 强调虽然安全，但错误信息会丢失
+  - 提供正确的异常捕获和转换示例
+  - 添加异常处理流程对比表
+  - 包含完整的最佳实践指南
+- **总测试数量**: 从 266 个增加到 273 个测试用例（+7个）
+  - rule_engine_test: 从 127 个增加到 134 个测试用例
+
+### 改进 (Changed)
+
+#### call_match_function 错误处理增强
+- **问题修复**: 修复了 `call_match_function` 中所有错误返回路径未设置 `result` 字段的问题
+  - 规则函数表不存在：现在设置 `result.matched = false` 和 `result.message`
+  - 规则函数不存在：现在设置 `result.matched = false` 和 `result.message`
+  - 数据适配器失败：现在设置 `result.matched = false` 和 `result.message`
+  - Lua pcall 失败（包括 C++ 异常）：现在设置 `result.matched = false` 和 `result.message`
+  - 返回值类型错误：现在设置 `result.matched = false` 和 `result.message`
+- **错误信息同步**: 所有错误路径同时设置 `result.message` 和 `error_msg` 参数，保持一致
+- **格式统一**: lua_pcall 失败的错误信息使用 `"Failed to call match: "` 前缀，与批量匹配版本保持一致
+- **改进效果**:
+  - 调用者可以通过 `result.message` 获取详细错误信息，即使 `match_rule()` 返回 `false`
+  - 提升了调试体验和错误追踪能力
+  - 确保 `result.matched` 始终正确反映匹配状态
+
 #### C++ 函数注册功能
 - **函数注册机制**: 支持将 C++ 函数注册到 Lua 的全局 `ljre` 命名空间
   - 注册普通 C++ 函数到 Lua

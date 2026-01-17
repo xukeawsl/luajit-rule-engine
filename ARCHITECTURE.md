@@ -253,6 +253,87 @@ engine.clear_registered_functions();
 - **灵活管理**：支持运行时动态注册、注销、查询函数
 - **命名空间隔离**：所有函数注册在全局 `ljre` 表中，避免污染全局命名空间
 
+#### C++ 异常处理注意事项
+
+**✅ 重要发现**：LuaJIT 可以捕获 C++ 异常，注册的 C++ 函数抛出异常**不会导致程序崩溃**！
+
+LuaJIT（本项目使用的 LuaJIT-2.1.0-beta3）具有特殊的异常处理机制，可以捕获未捕获的 C++ 异常并将其转换为 Lua 错误。
+
+**⚠️ 但是**：LuaJIT 捕获的 C++ 异常只返回简短的错误信息（如 `"C++ exception"`），**原始异常的详细信息会丢失**。
+
+**两种场景对比**：
+
+**场景 1：不使用 pcall（直接调用）**
+```lua
+function match(data)
+    local result = ljre.dangerous_function()
+    return true, "Success: " .. result
+end
+```
+
+**结果**：
+- ✅ 程序不会崩溃
+- ❌ `match_rule()` 返回 `false`
+- ✅ `result.matched = false`
+- ✅ `result.message = "Failed to call match: C++ exception"`
+- ✅ `error` 参数也包含错误信息
+
+**场景 2：使用 pcall 保护**
+```lua
+function match(data)
+    local ok, result = pcall(function()
+        return ljre.dangerous_function()
+    end)
+
+    if not ok then
+        return false, "Error: " .. result
+    end
+
+    return true, "Success"
+end
+```
+
+**结果**：
+- ✅ 程序不会崩溃
+- ✅ `match_rule()` 返回 `true`
+- ✅ `result.matched = false`
+- ✅ `result.message = "Error: C++ exception"`
+
+**✅ 推荐做法**：
+```cpp
+int safe_function(lua_State* L) {
+    try {
+        // 可能抛出异常的代码
+        if (error_condition) {
+            throw std::runtime_error("Detailed error message");
+        }
+        lua_pushnumber(L, 42.0);
+        return 1;
+    } catch (const std::exception& e) {
+        // 手动将 C++ 异常转换为 Lua 错误，保留详细信息
+        lua_pushstring(L, e.what());
+        lua_error(L);
+        return 0;
+    }
+}
+```
+
+**异常处理流程对比**：
+
+| 场景 | 是否安全 | 错误信息 | 推荐度 |
+|------|---------|---------|--------|
+| Lua `error()` | ✅ 安全 | 完整信息 | ⭐⭐⭐⭐⭐ |
+| C++ `lua_error()` | ✅ 安全 | 完整信息 | ⭐⭐⭐⭐⭐ |
+| C++ 异常（未捕获） | ✅ **LuaJIT 可捕获** | ❌ 仅 `"C++ exception"` | ⭐⭐ |
+| C++ 异常（手动捕获） | ✅ 安全 | 完整信息 | ⭐⭐⭐⭐⭐ |
+
+**最佳实践**：
+1. ✅ **LuaJIT 可以捕获 C++ 异常，程序不会崩溃**
+2. ⚠️ **但未捕获的异常错误信息会丢失**
+3. ✅ **强烈建议手动捕获 C++ 异常并使用 `lua_error()` 转换**
+4. ✅ **手动转换可以保留完整的错误信息，便于调试**
+5. ✅ **无论是否手动捕获，都建议在 Lua 端使用 `pcall()` 保护**
+
 ### 3.2 LuaState (Lua 状态管理)
 
 **职责**：
@@ -1140,11 +1221,11 @@ luajit-rule-engine
           │  (多组件协同测试)     │
           └──────────────────────┘
       ┌──────────────────────────────────┐
-      │     Unit Tests (单元测试)         │  251 个测试用例
+      │     Unit Tests (单元测试)         │  258 个测试用例
       │  - LuaState: 52                  │  > 90%
       │  - LuaStackGuard: 17             │
       │  - DataAdapter/JsonAdapter: 55   │
-      │  - RuleEngine: 127               │
+      │  - RuleEngine: 134               │
       └──────────────────────────────────┘
 
 测试工具:
@@ -1162,10 +1243,10 @@ LuaState                 52         ≥90%
 LuaStackGuard            17         ≥90%
 DataAdapter              36         ≥90%
 JsonAdapter              55         ≥90%  (+9 深度限制测试)
-RuleEngine              127         ≥90%  (+11 JIT 控制测试、+30 函数注册测试)
+RuleEngine              134         ≥90%  (+11 JIT 控制测试、+30 函数注册测试、+7 C++ 异常处理测试)
 Integration              15         ≥80%  (+4 深度限制测试)
 ────────────────────────────────────────
-总计                     266        ≥85%
+总计                     273        ≥85%
 ```
 
 ---
@@ -1246,7 +1327,7 @@ LuaJIT Rule Engine 是一个设计精良、实现规范的高性能规则引擎�
 2. **动态配置**：支持规则热更新，无需重启服务
 3. **安全可靠**：沙箱环境 + 栈守卫，确保运行安全
 4. **易于扩展**：适配器模式支持多种数据格式；支持 C++ 函数注册扩展功能
-5. **高测试覆盖**：266+ 测试用例，覆盖率 ≥85%
+5. **高测试覆盖**：273 个测试用例，覆盖率 ≥85%
 
 ### 14.2 架构特点
 

@@ -13,7 +13,7 @@
 - **JIT 控制**: 支持运行时动态启用/禁用/刷新 JIT 编译器
 - **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math、jit），不开放 io/os/debug 等危险接口
 - **零依赖（除 LuaJIT）**: 只依赖 LuaJIT 和 nlohmann/json（header-only）
-- **完善的测试**: 包含 236 个单元测试，覆盖所有核心功能和错误场景
+- **完善的测试**: 包含 273 个单元测试，覆盖所有核心功能和错误场景
 - **性能测试套件**: 45+ benchmark 测试用例，详细对比 LuaJIT vs Native 性能
 
 ## 编码规范
@@ -277,7 +277,7 @@ tests/
 │   ├── 边界条件测试
 │   ├── 栈平衡测试
 │   └── 深度嵌套限制测试（9个测试用例）
-├── rule_engine_test.cpp        # 规则引擎测试（127个测试用例）
+├── rule_engine_test.cpp        # 规则引擎测试（134个测试用例）
 │   ├── 规则加载和卸载测试
 │   ├── 规则匹配测试（单个和批量）
 │   ├── 规则热更新测试
@@ -312,6 +312,14 @@ tests/
 │   │   ├── 函数在规则中使用测试
 │   │   ├── 多函数协同测试
 │   │   └── 无效状态下的函数操作测试（6个）
+│   ├── C++ 异常处理测试（7个测试用例）
+│   │   ├── C++ 函数抛出异常测试（使用 pcall）
+│   │   ├── C++ 函数抛出异常测试（不使用 pcall）
+│   │   ├── 安全异常捕获测试（3个场景）
+│   │   ├── 类成员函数异常处理测试
+│   │   ├── 异常处理最佳实践测试
+│   │   ├── 直接调用测试（不使用 pcall）
+│   │   └── 多函数异常处理测试
 │   └── 深度限制集成测试（4个测试用例）
 └── integration_test.cpp        # 集成测试（15个测试用例）
     ├── 端到端工作流测试
@@ -323,9 +331,9 @@ tests/
 - lua_state_test: 52 个测试用例
 - lua_stack_guard_test: 17 个测试用例
 - data_adapter_test: 55 个测试用例（+9 深度限制测试）
-- rule_engine_test: 127 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试）
+- rule_engine_test: 134 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试、+7 C++ 异常处理测试）
 - integration_test: 15 个测试用例（+4 深度限制集成测试）
-- **总计**: 266 个测试用例，100% 通过
+- **总计**: 273 个测试用例，100% 通过
 
 ### 测试覆盖率目标
 
@@ -833,6 +841,115 @@ engine.unregister_function("log");
 // 清空所有已注册的函数
 engine.clear_registered_functions();
 ```
+
+### ⚠️ 重要：C++ 异常处理说明
+
+**重要发现**：LuaJIT 可以捕获 C++ 异常并将其转换为 Lua 错误，**注册的 C++ 函数抛出异常不会导致程序崩溃**！
+
+#### ✅ LuaJIT 的 C++ 异常保护
+
+LuaJIT（本项目使用的 LuaJIT-2.1.0-beta3）具有特殊的异常处理机制，可以捕获 C++ 异常：
+
+```cpp
+// 即使抛出 C++ 异常，程序也不会崩溃
+int throws_exception(lua_State* L) {
+    throw std::runtime_error("C++ exception");
+    return 0;
+}
+```
+
+当在 Lua 中调用时：
+```lua
+-- 场景 1：不使用 pcall（直接调用）
+function match(data)
+    local result = ljre.throws_exception()
+    return true, "Success: " .. result
+end
+```
+
+**结果**：
+- ✅ 程序不会崩溃
+- ❌ `match_rule()` 返回 `false`（调用失败）
+- ✅ `result.matched = false`（标记为匹配失败）
+- ✅ `result.message = "Failed to call match: C++ exception"`（包含错误信息）
+- ✅ `error` 参数也包含相同的错误信息
+
+```lua
+-- 场景 2：使用 pcall 保护
+function match(data)
+    local ok, result = pcall(function()
+        return ljre.throws_exception()
+    end)
+
+    if not ok then
+        return false, "Function call failed: " .. result
+    end
+
+    return true, "Success"
+end
+```
+
+**结果**：
+- ✅ 程序不会崩溃
+- ✅ `match_rule()` 返回 `true`（调用成功）
+- ✅ `result.matched = false`（规则返回匹配失败）
+- ✅ `result.message = "Function call failed: C++ exception"`（包含错误信息）
+- ✅ `error` 参数为空
+
+**对比**：
+| 场景 | `match_rule()` 返回 | `result.matched` | 错误信息位置 |
+|------|-------------------|-----------------|-------------|
+| **使用 pcall** | `true` | `false` | `result.message` |
+| **不使用 pcall** | `false` | `false` | `result.message` 和 `error` |
+
+#### ⚠️ 问题：错误信息不详细
+
+虽然 LuaJIT 可以捕获 C++ 异常，但错误信息不够详细：
+- 只返回 `"C++ exception"` 这样的简短信息
+- **原始异常的详细信息会丢失**（如 `std::runtime_error::what()` 的内容）
+
+#### ✅ 推荐做法：手动捕获并转换
+
+```cpp
+int safe_function(lua_State* L) {
+    try {
+        // 可能抛出异常的代码
+        if (some_error_condition) {
+            throw std::runtime_error("Something went wrong");
+        }
+
+        lua_pushnumber(L, 42.0);
+        return 1;
+
+    } catch (const std::exception& e) {
+        // 手动将 C++ 异常转换为 Lua 错误，保留详细错误信息
+        lua_pushstring(L, e.what());  // 保留完整的错误信息
+        lua_error(L);  // 使用 Lua 错误机制
+        return 0;  // 不会执行到这里
+    }
+}
+```
+
+**优势**：
+- ✅ 保留完整的错误信息（如 `"Something went wrong"`）
+- ✅ 便于调试和问题定位
+- ✅ 与 Lua 错误处理机制完全一致
+
+#### 异常处理对比
+
+| 场景 | 是否安全 | 错误信息 | 推荐度 |
+|------|---------|---------|--------|
+| Lua `error()` | ✅ 安全 | 完整信息 | ⭐⭐⭐⭐⭐ |
+| C++ `lua_error()` | ✅ 安全 | 完整信息 | ⭐⭐⭐⭐⭐ |
+| C++ 异常（未捕获） | ✅ **LuaJIT 可捕获** | ❌ 仅 `"C++ exception"` | ⭐⭐ |
+| C++ 异常（手动捕获） | ✅ 安全 | 完整信息 | ⭐⭐⭐⭐⭐ |
+
+**核心原则**：
+1. ✅ **LuaJIT 可以捕获 C++ 异常，程序不会崩溃**
+2. ⚠️ **但未捕获的 C++ 异常错误信息会丢失**
+3. ✅ **强烈建议手动捕获 C++ 异常并使用 `lua_error()` 转换**
+4. ✅ **手动转换可以保留完整的错误信息，便于调试**
+5. ✅ **无论是否手动捕获，都建议在 Lua 端使用 `pcall()` 保护**
 
 ## 性能优化
 
