@@ -217,6 +217,14 @@ bool RuleEngine::match_rule(const std::vector<std::string>& rule_names,
 
     // 将数据压入栈顶
     if (!data_adapter.push_to_lua(L, error_msg)) {
+        for (const auto& rule_name : unique_rules) {
+            MatchResult result;
+            result.matched = false;
+            if (error_msg) {
+                result.message = *error_msg;
+            }
+            results[rule_name] = result;
+        }
         return false;
     }
 
@@ -395,15 +403,8 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
     // 将数据压入栈顶
     if (!data_adapter.push_to_lua(L, error_msg)) {
         result.matched = false;
-        // 注意：data_adapter.push_to_lua 可能已经设置了 error_msg
-        // 如果没有设置，使用默认错误信息
-        if (error_msg && error_msg->empty()) {
-            *error_msg = "Failed to push data to Lua";
+        if (error_msg) {
             result.message = *error_msg;
-        } else if (error_msg) {
-            result.message = *error_msg;
-        } else {
-            result.message = "Failed to push data to Lua";
         }
         return false;
     }
@@ -563,6 +564,27 @@ std::vector<std::string> RuleEngine::get_registered_functions() {
     }
 
     return functions;
+}
+
+bool RuleEngine::add_lua_file(const std::string& file_path, std::string* error_msg) {
+    if (!_lua_state.is_valid()) {
+        if (error_msg) {
+            *error_msg = "Lua state is invalid";
+        }
+        return false;
+    }
+
+    // 加载并执行 Lua 文件
+    // 文件内容会自行决定如何组织函数（设置什么全局变量）
+    // 引擎只负责加载执行，不做任何限制
+    if (!_lua_state.load_file(file_path.c_str(), error_msg)) {
+        return false;
+    }
+
+    // 文件执行后，定义的全局变量会自动可用
+    // 引擎不需要做任何额外处理
+
+    return true;
 }
 
 void RuleEngine::ensure_ljre_table() {

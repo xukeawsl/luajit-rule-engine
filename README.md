@@ -13,7 +13,7 @@
 - **JIT 控制**: 支持运行时动态启用/禁用/刷新 JIT 编译器
 - **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math、jit），不开放 io/os/debug 等危险接口
 - **零依赖（除 LuaJIT）**: 只依赖 LuaJIT 和 nlohmann/json（header-only）
-- **完善的测试**: 包含 273 个单元测试，覆盖所有核心功能和错误场景
+- **完善的测试**: 包含 282 个单元测试，覆盖所有核心功能和错误场景
 - **性能测试套件**: 45+ benchmark 测试用例，详细对比 LuaJIT vs Native 性能
 
 ## 编码规范
@@ -331,9 +331,9 @@ tests/
 - lua_state_test: 52 个测试用例
 - lua_stack_guard_test: 17 个测试用例
 - data_adapter_test: 55 个测试用例（+9 深度限制测试）
-- rule_engine_test: 134 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试、+7 C++ 异常处理测试）
+- rule_engine_test: 143 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试）
 - integration_test: 15 个测试用例（+4 深度限制集成测试）
-- **总计**: 273 个测试用例，100% 通过
+- **总计**: 282 个测试用例，100% 通过
 
 ### 测试覆盖率目标
 
@@ -841,6 +841,76 @@ engine.unregister_function("log");
 // 清空所有已注册的函数
 engine.clear_registered_functions();
 ```
+
+#### Lua 公共函数加载
+
+除了注册 C++ 函数，引擎还支持加载 Lua 公共函数文件，方便业务逻辑的快速迭代和复用。
+
+**加载 Lua 公共函数**：
+```cpp
+RuleEngine engine;
+std::string error;
+
+// 加载包含公共函数的 Lua 文件
+engine.add_lua_file("utils.lua", &error);
+```
+
+**Lua 公共函数文件示例** (`utils.lua`)：
+```lua
+-- 定义 utils 命名空间
+utils = {}
+
+-- 成人验证
+function utils.is_adult(data)
+    return data.age and data.age >= 18
+end
+
+-- 计算用户积分
+function utils.calculate_score(data)
+    local score = 0
+    if data.vip then score = score + 10 end
+    if data.level then score = score + data.level end
+    return score
+end
+
+-- 数据格式化
+function utils.format_message(name, score)
+    return string.format("User %s has score %d", name, score)
+end
+```
+
+**在规则中使用公共函数**：
+```lua
+function match(data)
+    -- 使用 utils 命名空间的公共函数
+    if not utils.is_adult(data) then
+        return false, "User is not an adult"
+    end
+
+    local score = utils.calculate_score(data)
+    if score < 10 then
+        return false, "Score too low: " .. score
+    end
+
+    local msg = utils.format_message(data.name or "Unknown", score)
+    return true, msg
+end
+```
+
+**多个命名空间**：
+```cpp
+// 加载多个公共函数文件
+engine.add_lua_file("validators.lua", &error);   // 定义 validators.* 函数
+engine.add_lua_file("helpers.lua", &error);      // 定义 helpers.* 函数
+engine.add_lua_file("utils.lua", &error);        // 定义 utils.* 函数
+```
+
+**注意事项**：
+- 用户可以在 Lua 文件中自由选择命名空间（utils, validators, common 等）
+- 可以定义多个全局变量和命名空间
+- 引擎只负责加载执行，不做任何限制
+- 后加载的文件会覆盖同名变量
+- 支持与 C++ 注册函数混合使用
 
 ### ⚠️ 重要：C++ 异常处理说明
 

@@ -52,9 +52,9 @@ ctest --rerun-failed --output-on-failure
 | `lua_state_test.cpp` | Lua 状态管理 | 52 | ✅ 全部通过 |
 | `lua_stack_guard_test.cpp` | Lua 栈守卫 | 17 | ✅ 全部通过 |
 | `data_adapter_test.cpp` | 数据适配器 | 55 | ✅ 全部通过 |
-| `rule_engine_test.cpp` | 规则引擎 | 134 | ✅ 全部通过 |
+| `rule_engine_test.cpp` | 规则引擎 | 143 | ✅ 全部通过 |
 | `integration_test.cpp` | 集成测试 | 15 | ✅ 全部通过 |
-| **总计** | | **273** | **✅ 100% 通过** |
+| **总计** | | **282** | **✅ 100% 通过** |
 
 ### 测试分类
 
@@ -139,6 +139,15 @@ ctest --rerun-failed --output-on-failure
   - 异常处理最佳实践测试
   - 直接调用（不使用 pcall）测试
   - 多函数异常处理测试
+- **Lua 公共函数加载测试** (9个测试用例)
+  - utils 命名空间测试（3个场景：成年高分用户、未成年用户、成年低分用户）
+  - 多命名空间测试（validators + helpers）
+  - 全局函数测试
+  - 与 C++ 函数混合使用测试
+  - 文件不存在错误测试
+  - 语法错误测试
+  - 运行时错误测试
+  - 覆盖已存在函数测试
 
 **integration_test.cpp** - 端到端场景测试 (15个测试用例)
 - 用户注册验证

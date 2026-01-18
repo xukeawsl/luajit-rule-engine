@@ -164,6 +164,51 @@ public:
     // 获取所有已注册的函数名
     std::vector<std::string> get_registered_functions();
 
+    // === Lua 公共函数管理 ===
+
+    /**
+     * 加载 Lua 公共函数文件
+     *
+     * 此方法会执行指定的 Lua 文件，用户可以在文件中自由定义全局变量和函数。
+     * 引擎只负责加载和执行文件，不限制命名空间的选择。
+     *
+     * @param file_path Lua 文件路径
+     * @param error_msg 错误信息输出（可选）
+     * @return 成功返回 true，失败返回 false
+     *
+     * 使用示例：
+     *   engine.add_lua_file("utils.lua");
+     *   engine.add_lua_file("validators.lua");
+     *
+     * Lua 文件格式示例（utils.lua）：
+     *   utils = {}
+     *
+     *   function utils.is_adult(data)
+     *       return data.age and data.age >= 18
+     *   end
+     *
+     *   function utils.calculate_score(data)
+     *       local score = 0
+     *       if data.vip then score = score + 10 end
+     *       return score
+     *   end
+     *
+     * 规则中使用：
+     *   function match(data)
+     *       if not utils.is_adult(data) then
+     *           return false, "Not an adult"
+     *       end
+     *       local score = utils.calculate_score(data)
+     *       return true, "Score: " .. score
+     *   end
+     *
+     * 注意：
+     *   - 用户可以在 Lua 文件中自由选择命名空间（utils, validators, common 等）
+     *   - 可以定义多个全局变量
+     *   - 引擎只负责加载执行，不做任何限制
+     */
+    bool add_lua_file(const std::string& file_path, std::string* error_msg = nullptr);
+
 protected:
     // 用于测试：允许派生类访问内部状态
     // 测试类可以继承 RuleEngine 并访问这些成员

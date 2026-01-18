@@ -1895,9 +1895,18 @@ TEST_F(RuleEngineTest, MatchAllRules_PushToLuaFailure_SetsMatchedFalse) {
     FailingAdapter adapter(data);
 
     std::map<std::string, MatchResult> results;
-    // push_to_lua 失败应该返回 false
+    // push_to_lua 失败应该返回 false，并为所有规则填充失败结果
     EXPECT_FALSE(engine.match_all_rules(adapter, results, &error));
-    EXPECT_TRUE(results.empty());
+
+    // 验证 results 包含所有规则的失败结果
+    EXPECT_FALSE(results.empty());
+    EXPECT_EQ(results.size(), 1);  // 有1个规则
+    EXPECT_TRUE(results.count("pass") > 0);
+
+    // 验证每个规则的结果都是失败状态
+    EXPECT_FALSE(results["pass"].matched);
+    EXPECT_EQ(results["pass"].message, "Simulated push_to_lua failure");
+
     EXPECT_FALSE(error.empty());
     EXPECT_TRUE(error.find("Simulated push_to_lua failure") != std::string::npos);
 }
@@ -3297,5 +3306,387 @@ TEST_F(RuleEngineTest, CppFunction_MultipleExceptionTypes) {
     EXPECT_TRUE(result.matched);
     EXPECT_TRUE(result.message.find("20") != std::string::npos);  // func1: 10 * 2
     EXPECT_TRUE(result.message.find("52") != std::string::npos);  // func2: 10 + 42
+}
+
+// ============================================================================
+// Lua 公共函数加载测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, AddLuaFile_InvalidState_ReturnsFalse) {
+    // 测试在 Lua 状态无效时，add_lua_file 返回 false
+
+    // 使用派生类来访问 protected 的 get_lua_state()
+    class TestableEngine : public RuleEngine {
+    public:
+        using RuleEngine::RuleEngine;
+        ljre::LuaState& get_lua_state_ref() { return get_lua_state(); }
+    };
+
+    TestableEngine engine;
+    std::string error;
+
+    // 通过移动 LuaState 创建无效状态
+    // 这样 is_valid() 会返回 false
+    ljre::LuaState temp = std::move(engine.get_lua_state_ref());
+    // temp 在这里析构，引擎的 lua_state 现在无效
+    (void)temp;
+
+    CreateRuleFile("test_simple.lua", R"(
+        utils = {}
+        function utils.test()
+            return "hello"
+        end
+    )");
+
+    // 现在 Lua 状态无效，add_lua_file 应该返回 false
+    EXPECT_FALSE(engine.add_lua_file("test_data/rules/test_simple.lua", &error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_EQ(error, "Lua state is invalid");
+}
+
+TEST_F(RuleEngineTest, AddLuaFile_UtilsNamespace_Success) {
+    // 测试加载使用 utils 命名空间的 Lua 公共函数
+    RuleEngine engine;
+    std::string error;
+
+    // 创建 utils.lua 文件
+    CreateRuleFile("test_utils.lua", R"(
+        utils = {}
+
+        function utils.is_adult(data)
+            return data.age and data.age >= 18
+        end
+
+        function utils.calculate_score(data)
+            local score = 0
+            if data.vip then score = score + 10 end
+            if data.level then score = score + data.level end
+            return score
+        end
+
+        function utils.format_message(name, score)
+            return string.format("User %s has score %d", name, score)
+        end
+    )");
+
+    // 加载公共函数文件
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/test_utils.lua", &error));
+
+    // 创建使用公共函数的规则
+    CreateRuleFile("test_use_utils.lua", R"(
+        function match(data)
+            -- 使用 utils 命名空间的公共函数
+            if not utils.is_adult(data) then
+                return false, "User is not an adult"
+            end
+
+            local score = utils.calculate_score(data)
+            if score < 10 then
+                return false, "Score too low: " .. score
+            end
+
+            local msg = utils.format_message(data.name or "Unknown", score)
+            return true, msg
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("utils_rule", "test_data/rules/test_use_utils.lua", &error));
+
+    // 测试用例 1: 成年用户，高分
+    {
+        json data = {{"name", "Alice"}, {"age", 25}, {"vip", true}, {"level", 5}};
+        JsonAdapter adapter(data);
+        MatchResult result;
+        ASSERT_TRUE(engine.match_rule("utils_rule", adapter, result, &error));
+        EXPECT_TRUE(result.matched);
+        EXPECT_EQ(result.message, "User Alice has score 15");  // 10 + 5
+    }
+
+    // 测试用例 2: 未成年用户
+    {
+        json data = {{"name", "Bob"}, {"age", 15}, {"vip", false}};
+        JsonAdapter adapter(data);
+        MatchResult result;
+        ASSERT_TRUE(engine.match_rule("utils_rule", adapter, result, &error));
+        EXPECT_FALSE(result.matched);
+        EXPECT_EQ(result.message, "User is not an adult");
+    }
+
+    // 测试用例 3: 成年用户，低分
+    {
+        json data = {{"name", "Charlie"}, {"age", 30}, {"vip", false}, {"level", 2}};
+        JsonAdapter adapter(data);
+        MatchResult result;
+        ASSERT_TRUE(engine.match_rule("utils_rule", adapter, result, &error));
+        EXPECT_FALSE(result.matched);
+        EXPECT_EQ(result.message, "Score too low: 2");
+    }
+}
+
+TEST_F(RuleEngineTest, AddLuaFile_DifferentNamespaces) {
+    // 测试加载多个不同命名空间的 Lua 文件
+    RuleEngine engine;
+    std::string error;
+
+    // 创建 validators.lua
+    CreateRuleFile("test_validators.lua", R"(
+        validators = {}
+
+        function validators.check_email(data)
+            return data.email and data.email:match(".+@.+") ~= nil
+        end
+
+        function validators.check_phone(data)
+            return data.phone and #data.phone >= 11
+        end
+    )");
+
+    // 创建 helpers.lua
+    CreateRuleFile("test_helpers.lua", R"(
+        helpers = {}
+
+        function helpers.sanitize_string(s)
+            if not s then return "" end
+            return s:gsub("%s+", ""):gsub("^%s*(.-)%s*$", "%1")
+        end
+
+        function helpers.to_upper(s)
+            return s and s:upper() or ""
+        end
+    )");
+
+    // 加载两个文件
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/test_validators.lua", &error));
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/test_helpers.lua", &error));
+
+    // 创建使用多个命名空间的规则
+    CreateRuleFile("test_multi_namespace.lua", R"(
+        function match(data)
+            -- 使用 validators 命名空间
+            if not validators.check_email(data) then
+                return false, "Invalid email"
+            end
+
+            if not validators.check_phone(data) then
+                return false, "Invalid phone"
+            end
+
+            -- 使用 helpers 命名空间
+            local clean_name = helpers.sanitize_string(data.name or "")
+            local upper_name = helpers.to_upper(clean_name)
+
+            return true, "Validated: " .. upper_name
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("multi_ns_rule", "test_data/rules/test_multi_namespace.lua", &error));
+
+    // 测试
+    json data = {{"name", "  alice  "}, {"email", "alice@example.com"}, {"phone", "12345678901"}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("multi_ns_rule", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "Validated: ALICE");
+}
+
+TEST_F(RuleEngineTest, AddLuaFile_GlobalFunctions) {
+    // 测试加载直接定义全局函数的 Lua 文件
+    RuleEngine engine;
+    std::string error;
+
+    // 创建定义全局函数的文件
+    CreateRuleFile("test_globals.lua", R"(
+        function is_positive(n)
+            return n and n > 0
+        end
+
+        function double(n)
+            return n * 2
+        end
+
+        function add_ten(n)
+            return n + 10
+        end
+    )");
+
+    // 加载文件
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/test_globals.lua", &error));
+
+    // 创建使用全局函数的规则
+    CreateRuleFile("test_global_funcs.lua", R"(
+        function match(data)
+            local value = data.value or 0
+
+            if not is_positive(value) then
+                return false, "Value is not positive"
+            end
+
+            local doubled = double(value)
+            local added = add_ten(value)
+
+            return true, string.format("Value: %d, Doubled: %d, Plus10: %d", value, doubled, added)
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("global_funcs_rule", "test_data/rules/test_global_funcs.lua", &error));
+
+    // 测试
+    json data = {{"value", 5}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("global_funcs_rule", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "Value: 5, Doubled: 10, Plus10: 15");
+}
+
+TEST_F(RuleEngineTest, AddLuaFile_WithCppFunctions) {
+    // 测试 Lua 公共函数和 C++ 注册函数混合使用
+    RuleEngine engine;
+    std::string error;
+
+    // 注册 C++ 函数
+    ASSERT_TRUE(engine.register_function("add_42", test_add_42, &error));
+
+    // 加载 Lua 公共函数
+    CreateRuleFile("test_mixed.lua", R"(
+        utils = {}
+
+        function utils.is_adult(age)
+            return age and age >= 18
+        end
+
+        function utils.is_senior(age)
+            return age and age >= 60
+        end
+
+        function utils.check_score(score)
+            return score >= 60
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/test_mixed.lua", &error));
+
+    // 创建同时使用 C++ 函数和 Lua 公共函数的规则
+    CreateRuleFile("test_mixed_usage.lua", R"(
+        function match(data)
+            -- 使用 C++ 函数
+            local result = ljre.add_42(data.value or 0)
+
+            -- 使用 Lua 公共函数
+            local age = data.age or 0
+            local is_adult = utils.is_adult(age)
+            local is_senior = utils.is_senior(age)
+            local score_ok = utils.check_score(result)
+
+            if is_senior and score_ok then
+                return true, string.format("Senior citizen, age %d, result %d", age, result)
+            elseif is_adult and score_ok then
+                return true, string.format("Adult citizen, age %d, result %d", age, result)
+            else
+                return false, "Not qualified"
+            end
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("mixed_rule", "test_data/rules/test_mixed_usage.lua", &error));
+
+    // 测试
+    json data = {{"age", 65}, {"value", 25}};  // 65岁，25+42=67分
+    JsonAdapter adapter(data);
+    MatchResult result;
+    bool success = engine.match_rule("mixed_rule", adapter, result, &error);
+    if (!success) {
+        std::cout << "Error: " << error << std::endl;
+    }
+    ASSERT_TRUE(success);
+    EXPECT_TRUE(result.matched);
+    EXPECT_TRUE(result.message.find("Senior citizen") != std::string::npos);
+    EXPECT_TRUE(result.message.find("67") != std::string::npos);  // 25 + 42 = 67
+}
+
+TEST_F(RuleEngineTest, AddLuaFile_FileNotExist) {
+    // 测试加载不存在的文件
+    RuleEngine engine;
+    std::string error;
+
+    EXPECT_FALSE(engine.add_lua_file("nonexistent.lua", &error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_TRUE(error.find("Failed to load file") != std::string::npos ||
+                error.find("cannot open") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, AddLuaFile_SyntaxError) {
+    // 测试加载有语法错误的文件
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("test_syntax_error.lua", R"(
+        utils = {}
+
+        function utils.broken(  -- 缺少右括号
+            return true
+        end
+    )");
+
+    EXPECT_FALSE(engine.add_lua_file("test_data/rules/test_syntax_error.lua", &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, AddLuaFile_RuntimeError) {
+    // 测试加载有运行时错误的文件
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("test_runtime_error.lua", R"(
+        local x = nil
+        local y = x.value  -- 尝试访问 nil 的字段
+    )");
+
+    EXPECT_FALSE(engine.add_lua_file("test_data/rules/test_runtime_error.lua", &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, AddLuaFile_OverrideExisting) {
+    // 测试后加载的文件覆盖同名函数
+    RuleEngine engine;
+    std::string error;
+
+    // 第一次加载
+    CreateRuleFile("test_v1.lua", R"(
+        utils = {}
+        function utils.get_value()
+            return "version 1"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/test_v1.lua", &error));
+
+    // 第二次加载（覆盖）
+    CreateRuleFile("test_v2.lua", R"(
+        utils = {}
+        function utils.get_value()
+            return "version 2"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/test_v2.lua", &error));
+
+    // 创建规则测试
+    CreateRuleFile("test_override.lua", R"(
+        function match(data)
+            local value = utils.get_value()
+            return true, value
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_rule("override_rule", "test_data/rules/test_override.lua", &error));
+
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("override_rule", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "version 2");  // 应该使用 v2
 }
 
