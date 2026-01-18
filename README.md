@@ -74,7 +74,7 @@ luajit-rule-engine/
 - **LuaJIT-2.1.0-beta3**: 需要安装到 `/usr/local/3rd/luajit-2.1.0-beta3/`
 - **nlohmann/json**: v3.11.3，已包含在 `third-party/` 目录中
 - **CMake**: >= 3.15
-- **C++ 编译器**: 支持 C++17（GCC 7+, Clang 5+, MSVC 2017+）
+- **C++ 编译器**: 支持 C++17（GCC 7+）
 
 ### 测试依赖
 - **GoogleTest**: 用于单元测试（CMake 会自动下载）
