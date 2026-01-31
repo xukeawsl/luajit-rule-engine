@@ -52,9 +52,9 @@ ctest --rerun-failed --output-on-failure
 | `lua_state_test.cpp` | Lua 状态管理 | 52 | ✅ 全部通过 |
 | `lua_stack_guard_test.cpp` | Lua 栈守卫 | 17 | ✅ 全部通过 |
 | `data_adapter_test.cpp` | 数据适配器 | 55 | ✅ 全部通过 |
-| `rule_engine_test.cpp` | 规则引擎 | 143 | ✅ 全部通过 |
+| `rule_engine_test.cpp` | 规则引擎 | 186 | ✅ 全部通过 |
 | `integration_test.cpp` | 集成测试 | 15 | ✅ 全部通过 |
-| **总计** | | **282** | **✅ 100% 通过** |
+| **总计** | | **325** | **✅ 100% 通过** |
 
 ### 测试分类
 
@@ -98,7 +98,7 @@ ctest --rerun-failed --output-on-failure
 
 #### 2. 集成测试 (Integration Tests)
 
-**rule_engine_test.cpp** - 规则引擎集成测试 (134个测试用例)
+**rule_engine_test.cpp** - 规则引擎集成测试 (186个测试用例)
 - 规则加载和卸载
 - 规则匹配（单个和批量）
 - 规则热更新
@@ -148,6 +148,16 @@ ctest --rerun-failed --output-on-failure
   - 语法错误测试
   - 运行时错误测试
   - 覆盖已存在函数测试
+- **Clone 功能测试** (43个测试用例)
+  - 基本克隆测试（NONE, RULES, LUA_FILES, CPP_FUNCTIONS, CPP_MEMBER_FUNCTIONS, ALL）
+  - 便捷方法测试（clone_rules, clone_lua_files, clone_cpp_functions, clone_safe）
+  - 组合选项测试（按位或组合多个选项）
+  - 错误处理测试（克隆空引擎、无效状态）
+  - 独立性测试（克隆引擎与原引擎独立）
+  - 多次克隆测试（从同一个引擎多次克隆）
+  - 边界情况测试（空规则、空函数、单个规则等）
+  - 复杂场景测试（完整工作流、多引擎协作）
+  - 功能验证测试（克隆后功能正常）
 
 **integration_test.cpp** - 端到端场景测试 (15个测试用例)
 - 用户注册验证

@@ -21,6 +21,7 @@ print_help() {
     echo "  --stress               只运行压力测试"
     echo "  --comparison           只运行对比测试"
     echo "  --scaling              只运行扩展性测试"
+    echo "  --clone                只运行 Clone 方法性能测试"
     echo "  --min-time=SECONDS     设置最小运行时间（默认 30 秒）"
     echo "  --repetitions=N        重复运行次数（默认 1 次）"
     echo "  --format=FORMAT        输出格式：console, json（默认 console）"
@@ -30,6 +31,7 @@ print_help() {
     echo "示例:"
     echo "  $0 --all"
     echo "  $0 --basic --min-time=60"
+    echo "  $0 --clone --format=json"
     echo "  $0 --all --format=json --repetitions=5"
 }
 
@@ -43,6 +45,7 @@ RUN_BASIC=false
 RUN_STRESS=false
 RUN_COMPARISON=false
 RUN_SCALING=false
+RUN_CLONE=false
 
 # 解析参数
 while [[ $# -gt 0 ]]; do
@@ -65,6 +68,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --scaling)
             RUN_SCALING=true
+            shift
+            ;;
+        --clone)
+            RUN_CLONE=true
             shift
             ;;
         --min-time=*)
@@ -96,7 +103,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # 如果没有指定任何测试，默认运行所有测试
-if [ "$RUN_ALL" = false ] && [ "$RUN_BASIC" = false ] && [ "$RUN_STRESS" = false ] && [ "$RUN_COMPARISON" = false ] && [ "$RUN_SCALING" = false ]; then
+if [ "$RUN_ALL" = false ] && [ "$RUN_BASIC" = false ] && [ "$RUN_STRESS" = false ] && [ "$RUN_COMPARISON" = false ] && [ "$RUN_SCALING" = false ] && [ "$RUN_CLONE" = false ]; then
     RUN_ALL=true
 fi
 
@@ -154,6 +161,10 @@ fi
 
 if [ "$RUN_ALL" = true ] || [ "$RUN_SCALING" = true ]; then
     run_benchmark "scaling_benchmark" "benchmarks/scaling_benchmark"
+fi
+
+if [ "$RUN_ALL" = true ] || [ "$RUN_CLONE" = true ]; then
+    run_benchmark "clone_benchmark" "benchmarks/clone_benchmark"
 fi
 
 echo -e "${GREEN}========================================${NC}"

@@ -3690,3 +3690,1064 @@ TEST_F(RuleEngineTest, AddLuaFile_OverrideExisting) {
     EXPECT_EQ(result.message, "version 2");  // 应该使用 v2
 }
 
+// ============================================================================
+// RuleEngine Clone 方法测试
+// ============================================================================
+
+// --- 基础克隆测试 ---
+
+TEST_F(RuleEngineTest, Clone_NONE_ReturnsEmptyEngine) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加一些内容
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    // 克隆 NONE 应该返回空引擎
+    auto cloned = engine.clone(RuleEngine::NONE, &error);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_EQ(cloned->get_rule_count(), 0);
+    EXPECT_FALSE(cloned->has_rule("rule1"));
+}
+
+TEST_F(RuleEngineTest, Clone_NONE_NoErrorMessage) {
+    RuleEngine engine;
+
+    auto cloned = engine.clone(RuleEngine::NONE);
+    ASSERT_NE(cloned, nullptr);
+}
+
+// --- 克隆规则文件测试 ---
+
+TEST_F(RuleEngineTest, Clone_RULES_ClonesAllRules) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加多个规则
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/always_fail.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule3", "test_data/rules/age_check.lua", &error));
+
+    // 克隆规则
+    auto cloned = engine.clone(RuleEngine::RULES, &error);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_TRUE(error.empty());
+
+    // 验证规则已克隆
+    EXPECT_EQ(cloned->get_rule_count(), 3);
+    EXPECT_TRUE(cloned->has_rule("rule1"));
+    EXPECT_TRUE(cloned->has_rule("rule2"));
+    EXPECT_TRUE(cloned->has_rule("rule3"));
+
+    // 验证规则文件路径（使用集合检查，因为 unordered_map 顺序不确定）
+    auto rules = cloned->get_all_rules();
+    std::set<std::string> paths;
+    for (const auto& r : rules) {
+        paths.insert(r.file_path);
+    }
+    EXPECT_TRUE(paths.count("test_data/rules/always_pass.lua"));
+    EXPECT_TRUE(paths.count("test_data/rules/always_fail.lua"));
+    EXPECT_TRUE(paths.count("test_data/rules/age_check.lua"));
+}
+
+TEST_F(RuleEngineTest, Clone_RULES_EmptyEngine) {
+    RuleEngine engine;
+
+    auto cloned = engine.clone(RuleEngine::RULES);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_EQ(cloned->get_rule_count(), 0);
+}
+
+TEST_F(RuleEngineTest, Clone_RULES_ClonedRulesWork) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_rule", "test_data/rules/age_check.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::RULES, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 测试克隆的规则能正常工作
+    json data = {{"age", 25}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("age_rule", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "年龄检查通过");
+
+    // 测试不满足条件的情况
+    json data2 = {{"age", 15}};
+    JsonAdapter adapter2(data2);
+    ASSERT_TRUE(cloned->match_rule("age_rule", adapter2, result, &error));
+    EXPECT_FALSE(result.matched);
+}
+
+TEST_F(RuleEngineTest, Clone_rules_ConvenienceMethod) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    auto cloned = engine.clone_rules(&error);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_EQ(cloned->get_rule_count(), 1);
+    EXPECT_TRUE(cloned->has_rule("rule1"));
+}
+
+TEST_F(RuleEngineTest, Clone_rules_ConvenienceMethod_NoError) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    auto cloned = engine.clone_rules();
+    ASSERT_NE(cloned, nullptr);
+}
+
+// --- 克隆 Lua 公共文件测试 ---
+
+TEST_F(RuleEngineTest, Clone_LUA_FILES_ClonesAllLuaFiles) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加多个 Lua 文件
+    CreateRuleFile("utils1.lua", R"(
+        utils = utils or {}
+        function utils.helper1()
+            return "helper1"
+        end
+    )");
+    CreateRuleFile("utils2.lua", R"(
+        utils = utils or {}
+        function utils.helper2()
+            return "helper2"
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils1.lua", &error));
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils2.lua", &error));
+
+    // 克隆 Lua 文件
+    auto cloned = engine.clone(RuleEngine::LUA_FILES, &error);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_TRUE(error.empty());
+
+    // 创建规则来验证 Lua 文件已加载
+    CreateRuleFile("test_utils.lua", R"(
+        function match(data)
+            local result = utils.helper1() .. utils.helper2()
+            return true, result
+        end
+    )");
+
+    ASSERT_TRUE(cloned->add_rule("test_rule", "test_data/rules/test_utils.lua", &error));
+
+    // 测试规则能使用克隆的 Lua 公共函数
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("test_rule", adapter, result, &error));
+    EXPECT_EQ(result.message, "helper1helper2");
+}
+
+TEST_F(RuleEngineTest, Clone_LUA_FILES_EmptyEngine) {
+    RuleEngine engine;
+
+    auto cloned = engine.clone(RuleEngine::LUA_FILES);
+    ASSERT_NE(cloned, nullptr);
+}
+
+TEST_F(RuleEngineTest, Clone_lua_files_ConvenienceMethod) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("utils.lua", R"(
+        utils = {}
+        function utils.test()
+            return 42
+        end
+    )");
+
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils.lua", &error));
+
+    auto cloned = engine.clone_lua_files(&error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 验证 Lua 文件已克隆
+    CreateRuleFile("verify.lua", R"(
+        function match(data)
+            return true, tostring(utils.test())
+        end
+    )");
+
+    ASSERT_TRUE(cloned->add_rule("verify", "test_data/rules/verify.lua", &error));
+
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("verify", adapter, result, &error));
+    EXPECT_EQ(result.message, "42");
+}
+
+TEST_F(RuleEngineTest, Clone_lua_files_ConvenienceMethod_NoError) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("utils.lua", "utils = {}");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils.lua", &error));
+
+    auto cloned = engine.clone_lua_files();
+    ASSERT_NE(cloned, nullptr);
+}
+
+// --- 克隆 C++ 普通函数测试 ---
+
+static int test_cpp_function(lua_State* L) {
+    lua_pushnumber(L, 42);
+    return 1;
+}
+
+static int test_cpp_add(lua_State* L) {
+    double a = lua_tonumber(L, 1);
+    double b = lua_tonumber(L, 2);
+    lua_pushnumber(L, a + b);
+    return 1;
+}
+
+TEST_F(RuleEngineTest, Clone_CPP_FUNCTIONS_ClonesAllCppFunctions) {
+    RuleEngine engine;
+    std::string error;
+
+    // 注册多个 C++ 函数
+    ASSERT_TRUE(engine.register_function("func1", test_cpp_function, &error));
+    ASSERT_TRUE(engine.register_function("func2", test_cpp_add, &error));
+
+    // 克隆 C++ 函数
+    auto cloned = engine.clone(RuleEngine::CPP_FUNCTIONS, &error);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_TRUE(error.empty());
+
+    // 验证函数已注册到克隆的引擎
+    auto functions = cloned->get_registered_functions();
+    EXPECT_EQ(functions.size(), 2);
+
+    // 按字母顺序排序后比较
+    std::sort(functions.begin(), functions.end());
+    EXPECT_EQ(functions[0], "func1");
+    EXPECT_EQ(functions[1], "func2");
+}
+
+TEST_F(RuleEngineTest, Clone_CPP_FUNCTIONS_EmptyEngine) {
+    RuleEngine engine;
+
+    auto cloned = engine.clone(RuleEngine::CPP_FUNCTIONS);
+    ASSERT_NE(cloned, nullptr);
+
+    EXPECT_EQ(cloned->get_registered_functions().size(), 0);
+}
+
+TEST_F(RuleEngineTest, Clone_CPP_FUNCTIONS_ClonedFunctionsWork) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("get_value", test_cpp_function, &error));
+
+    auto cloned = engine.clone(RuleEngine::CPP_FUNCTIONS, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 创建规则来测试 C++ 函数
+    CreateRuleFile("test_cpp.lua", R"(
+        function match(data)
+            local value = ljre.get_value()
+            return true, "value=" .. tostring(value)
+        end
+    )");
+
+    ASSERT_TRUE(cloned->add_rule("test_rule", "test_data/rules/test_cpp.lua", &error));
+
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("test_rule", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "value=42");
+}
+
+// --- 克隆 C++ 成员函数测试 ---
+
+class TestClass {
+public:
+    int value = 100;
+
+    int get_value(lua_State* L) {
+        lua_pushnumber(L, value);
+        return 1;
+    }
+
+    int add(lua_State* L) {
+        double a = lua_tonumber(L, 1);
+        double b = lua_tonumber(L, 2);
+        lua_pushnumber(L, a + b + value);
+        return 1;
+    }
+
+    static int get_value_dispatcher(lua_State* L) {
+        auto* self = static_cast<TestClass*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->get_value(L);
+    }
+
+    static int add_dispatcher(lua_State* L) {
+        auto* self = static_cast<TestClass*>(lua_touserdata(L, lua_upvalueindex(1)));
+        return self->add(L);
+    }
+};
+
+TEST_F(RuleEngineTest, Clone_CPP_MEMBER_FUNCTIONS_ClonesAllMemberFunctions) {
+    RuleEngine engine;
+    std::string error;
+
+    TestClass obj1, obj2;
+    obj1.value = 100;
+    obj2.value = 200;
+
+    ASSERT_TRUE(engine.register_function("get_value1", &TestClass::get_value_dispatcher, &obj1, &error));
+    ASSERT_TRUE(engine.register_function("get_value2", &TestClass::get_value_dispatcher, &obj2, &error));
+
+    auto cloned = engine.clone(RuleEngine::CPP_MEMBER_FUNCTIONS, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    auto functions = cloned->get_registered_functions();
+    EXPECT_EQ(functions.size(), 2);
+}
+
+TEST_F(RuleEngineTest, Clone_CPP_MEMBER_FUNCTIONS_ClonedFunctionsWork) {
+    RuleEngine engine;
+    std::string error;
+
+    TestClass obj;
+    obj.value = 123;
+
+    ASSERT_TRUE(engine.register_function("get_val", &TestClass::get_value_dispatcher, &obj, &error));
+
+    auto cloned = engine.clone(RuleEngine::CPP_MEMBER_FUNCTIONS, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 验证成员函数能正常工作
+    CreateRuleFile("test_member.lua", R"(
+        function match(data)
+            local v = ljre.get_val()
+            return true, "value=" .. tostring(v)
+        end
+    )");
+
+    ASSERT_TRUE(cloned->add_rule("test_rule", "test_data/rules/test_member.lua", &error));
+
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("test_rule", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "value=123");
+}
+
+TEST_F(RuleEngineTest, Clone_cpp_functions_ConvenienceMethod_ClonesBothTypes) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("func1", test_cpp_function, &error));
+
+    TestClass obj;
+    ASSERT_TRUE(engine.register_function("func2", &TestClass::get_value_dispatcher, &obj, &error));
+
+    // clone_cpp_functions 应该克隆所有类型的 C++ 函数
+    auto cloned = engine.clone_cpp_functions(&error);
+    ASSERT_NE(cloned, nullptr);
+
+    auto functions = cloned->get_registered_functions();
+    EXPECT_EQ(functions.size(), 2);
+}
+
+TEST_F(RuleEngineTest, Clone_cpp_functions_ConvenienceMethod_NoError) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("func1", test_cpp_function, &error));
+
+    auto cloned = engine.clone_cpp_functions();
+    ASSERT_NE(cloned, nullptr);
+}
+
+// --- 克隆所有内容测试 ---
+
+TEST_F(RuleEngineTest, Clone_ALL_ClonesEverything) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加 Lua 文件
+    CreateRuleFile("common.lua", R"(
+        common = {}
+        function common.helper()
+            return 100
+        end
+    )");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/common.lua", &error));
+
+    // 注册 C++ 函数
+    ASSERT_TRUE(engine.register_function("cpp_func", test_cpp_function, &error));
+
+    TestClass obj;
+    ASSERT_TRUE(engine.register_function("member_func", &TestClass::get_value_dispatcher, &obj, &error));
+
+    // 添加规则
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/age_check.lua", &error));
+
+    // 克隆所有内容
+    auto cloned = engine.clone(RuleEngine::ALL, &error);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_TRUE(error.empty());
+
+    // 验证规则已克隆
+    EXPECT_EQ(cloned->get_rule_count(), 2);
+    EXPECT_TRUE(cloned->has_rule("rule1"));
+    EXPECT_TRUE(cloned->has_rule("rule2"));
+
+    // 验证 C++ 函数已克隆
+    auto functions = cloned->get_registered_functions();
+    EXPECT_EQ(functions.size(), 2);
+
+    // 验证 Lua 文件已克隆（通过创建使用它的规则来测试）
+    CreateRuleFile("verify_all.lua", R"(
+        function match(data)
+            local c = common.helper()
+            local cpp = ljre.cpp_func()
+            return true, "common=" .. c .. ", cpp=" .. cpp
+        end
+    )");
+    ASSERT_TRUE(cloned->add_rule("verify", "test_data/rules/verify_all.lua", &error));
+
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("verify", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "common=100, cpp=42");
+}
+
+TEST_F(RuleEngineTest, Clone_safe_ConvenienceMethod) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.register_function("func", test_cpp_function, &error));
+
+    auto cloned = engine.clone_safe(&error);
+    ASSERT_NE(cloned, nullptr);
+
+    EXPECT_EQ(cloned->get_rule_count(), 1);
+    EXPECT_EQ(cloned->get_registered_functions().size(), 1);
+}
+
+TEST_F(RuleEngineTest, Clone_safe_ConvenienceMethod_NoError) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    auto cloned = engine.clone_safe();
+    ASSERT_NE(cloned, nullptr);
+}
+
+// --- 组合选项克隆测试 ---
+
+TEST_F(RuleEngineTest, Clone_LUA_FILES_AND_RULES) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加 Lua 文件
+    CreateRuleFile("my_utils.lua", R"(
+        my_utils = {}
+        function my_utils.check(data)
+            return data.value > 0
+        end
+    )");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/my_utils.lua", &error));
+
+    // 添加规则
+    CreateRuleFile("use_utils.lua", R"(
+        function match(data)
+            if my_utils.check(data) then
+                return true, "value is positive"
+            end
+            return false, "value is not positive"
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/use_utils.lua", &error));
+
+    // 克隆 Lua 文件和规则
+    auto cloned = engine.clone(RuleEngine::LUA_FILES | RuleEngine::RULES, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    EXPECT_EQ(cloned->get_rule_count(), 1);
+
+    // 测试克隆的规则能正常工作
+    json data = {{"value", 10}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("rule1", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "value is positive");
+}
+
+TEST_F(RuleEngineTest, Clone_RULES_AND_CPP_FUNCTIONS) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("add", test_cpp_add, &error));
+
+    CreateRuleFile("use_cpp.lua", R"(
+        function match(data)
+            local sum = ljre.add(data.a, data.b)
+            return sum > 100, "sum=" .. sum
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/use_cpp.lua", &error));
+
+    // 克隆规则和 C++ 函数
+    auto cloned = engine.clone(RuleEngine::RULES | RuleEngine::CPP_FUNCTIONS, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 测试克隆的规则能正常工作
+    json data = {{"a", 60}, {"b", 50}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("rule1", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_EQ(result.message, "sum=110");
+}
+
+TEST_F(RuleEngineTest, Clone_LUA_FILES_AND_CPP_FUNCTIONS) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("utils.lua", R"(
+        utils = {}
+    )");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils.lua", &error));
+    ASSERT_TRUE(engine.register_function("func", test_cpp_function, &error));
+
+    auto cloned = engine.clone(RuleEngine::LUA_FILES | RuleEngine::CPP_FUNCTIONS, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    EXPECT_EQ(cloned->get_registered_functions().size(), 1);
+}
+
+TEST_F(RuleEngineTest, Clone_CPP_FUNCTIONS_AND_CPP_MEMBER_FUNCTIONS) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("func1", test_cpp_function, &error));
+
+    TestClass obj;
+    ASSERT_TRUE(engine.register_function("func2", &TestClass::get_value_dispatcher, &obj, &error));
+
+    auto cloned = engine.clone(RuleEngine::CPP_FUNCTIONS | RuleEngine::CPP_MEMBER_FUNCTIONS, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    EXPECT_EQ(cloned->get_registered_functions().size(), 2);
+}
+
+TEST_F(RuleEngineTest, Clone_AllThreeOptions) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("func1", test_cpp_function, &error));
+
+    TestClass obj;
+    ASSERT_TRUE(engine.register_function("func2", &TestClass::get_value_dispatcher, &obj, &error));
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    CreateRuleFile("utils.lua", "utils = {}");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::LUA_FILES | RuleEngine::CPP_FUNCTIONS | RuleEngine::RULES, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    EXPECT_EQ(cloned->get_rule_count(), 1);
+    EXPECT_EQ(cloned->get_registered_functions().size(), 1); // 只有普通函数
+}
+
+// --- 错误处理测试 ---
+
+TEST_F(RuleEngineTest, Clone_RULES_NonExistentFile_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("good_rule.lua", R"(
+        function match(data)
+            return true, "ok"
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("good_rule", "test_data/rules/good_rule.lua", &error));
+
+    // 删除文件来模拟文件不存在
+    system("rm test_data/rules/good_rule.lua");
+
+    auto cloned = engine.clone(RuleEngine::RULES, &error);
+    EXPECT_EQ(cloned, nullptr);
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, Clone_LUA_FILES_NonExistentFile_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("temp.lua", R"(
+        temp = {}
+    )");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/temp.lua", &error));
+
+    system("rm test_data/rules/temp.lua");
+
+    auto cloned = engine.clone(RuleEngine::LUA_FILES, &error);
+    EXPECT_EQ(cloned, nullptr);
+    EXPECT_FALSE(error.empty());
+}
+
+TEST_F(RuleEngineTest, Clone_LUA_FILES_SyntaxError_Fails) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("good.lua", "x = 1");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/good.lua", &error));
+
+    // 修改文件内容为有语法错误的代码
+    CreateRuleFile("good.lua", R"(
+        if true
+            -- missing 'then'
+        end
+    )");
+
+    // 克隆时应该失败，因为文件现在有语法错误
+    auto cloned = engine.clone(RuleEngine::LUA_FILES, &error);
+    EXPECT_EQ(cloned, nullptr);
+    EXPECT_FALSE(error.empty());
+}
+
+// --- 独立性测试 ---
+
+TEST_F(RuleEngineTest, Clone_EnginesAreIndependent) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::ALL, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 在原引擎中添加新规则
+    CreateRuleFile("new_rule.lua", R"(
+        function match(data)
+            return false, "new rule"
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/new_rule.lua", &error));
+
+    // 克隆的引擎不应该有新规则
+    EXPECT_EQ(engine.get_rule_count(), 2);
+    EXPECT_EQ(cloned->get_rule_count(), 1);
+    EXPECT_FALSE(cloned->has_rule("rule2"));
+
+    // 在克隆引擎中添加规则
+    CreateRuleFile("cloned_rule.lua", R"(
+        function match(data)
+            return true, "cloned rule"
+        end
+    )");
+    ASSERT_TRUE(cloned->add_rule("rule3", "test_data/rules/cloned_rule.lua", &error));
+
+    // 原引擎不应该有新规则
+    EXPECT_EQ(engine.get_rule_count(), 2);
+    EXPECT_EQ(cloned->get_rule_count(), 2);
+    EXPECT_FALSE(engine.has_rule("rule3"));
+}
+
+TEST_F(RuleEngineTest, Clone_ModifyingOriginalDoesNotAffectClone) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("utils.lua", R"(
+        utils = {}
+        function utils.get_value()
+            return "original"
+        end
+    )");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::LUA_FILES, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 重新加载 Lua 文件，修改函数
+    CreateRuleFile("utils.lua", R"(
+        utils = {}
+        function utils.get_value()
+            return "modified"
+        end
+    )");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils.lua", &error));
+
+    // 创建规则验证
+    CreateRuleFile("check.lua", R"(
+        function match(data)
+            return true, utils.get_value()
+        end
+    )");
+
+    // 原引擎应该看到修改后的版本
+    ASSERT_TRUE(engine.add_rule("check1", "test_data/rules/check.lua", &error));
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("check1", adapter, result, &error));
+    EXPECT_EQ(result.message, "modified");
+
+    // 克隆的引擎应该保持原版本
+    ASSERT_TRUE(cloned->add_rule("check2", "test_data/rules/check.lua", &error));
+    ASSERT_TRUE(cloned->match_rule("check2", adapter, result, &error));
+    EXPECT_EQ(result.message, "original");
+}
+
+// --- 多次克隆测试 ---
+
+TEST_F(RuleEngineTest, Clone_MultipleClonesFromSameEngine) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.register_function("func", test_cpp_function, &error));
+
+    auto clone1 = engine.clone(RuleEngine::ALL, &error);
+    auto clone2 = engine.clone(RuleEngine::ALL, &error);
+    auto clone3 = engine.clone(RuleEngine::ALL, &error);
+
+    ASSERT_NE(clone1, nullptr);
+    ASSERT_NE(clone2, nullptr);
+    ASSERT_NE(clone3, nullptr);
+
+    // 所有克隆都应该有相同的内容
+    EXPECT_EQ(clone1->get_rule_count(), 1);
+    EXPECT_EQ(clone2->get_rule_count(), 1);
+    EXPECT_EQ(clone3->get_rule_count(), 1);
+
+    EXPECT_EQ(clone1->get_registered_functions().size(), 1);
+    EXPECT_EQ(clone2->get_registered_functions().size(), 1);
+    EXPECT_EQ(clone3->get_registered_functions().size(), 1);
+}
+
+TEST_F(RuleEngineTest, Clone_CloneOfClone) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    auto clone1 = engine.clone(RuleEngine::ALL, &error);
+    ASSERT_NE(clone1, nullptr);
+
+    auto clone2 = clone1->clone(RuleEngine::ALL, &error);
+    ASSERT_NE(clone2, nullptr);
+
+    auto clone3 = clone2->clone(RuleEngine::ALL, &error);
+    ASSERT_NE(clone3, nullptr);
+
+    // 所有克隆都应该有原始规则
+    EXPECT_TRUE(clone1->has_rule("rule1"));
+    EXPECT_TRUE(clone2->has_rule("rule1"));
+    EXPECT_TRUE(clone3->has_rule("rule1"));
+
+    // 测试规则能正常工作
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(clone3->match_rule("rule1", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+// --- 边界情况测试 ---
+
+TEST_F(RuleEngineTest, Clone_EmptyEngineWithALL) {
+    RuleEngine engine;
+
+    auto cloned = engine.clone(RuleEngine::ALL);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_EQ(cloned->get_rule_count(), 0);
+    EXPECT_EQ(cloned->get_registered_functions().size(), 0);
+}
+
+TEST_F(RuleEngineTest, Clone_EngineWithOnlyRules) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/always_fail.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::ALL, &error);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_EQ(cloned->get_rule_count(), 2);
+}
+
+TEST_F(RuleEngineTest, Clone_EngineWithOnlyCppFunctions) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("func1", test_cpp_function, &error));
+    ASSERT_TRUE(engine.register_function("func2", test_cpp_add, &error));
+
+    auto cloned = engine.clone(RuleEngine::ALL, &error);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_EQ(cloned->get_registered_functions().size(), 2);
+}
+
+TEST_F(RuleEngineTest, Clone_EngineWithOnlyLuaFiles) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("file1.lua", "a = 1");
+    CreateRuleFile("file2.lua", "b = 2");
+
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/file1.lua", &error));
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/file2.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::ALL, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 验证通过测试是否能访问定义的变量
+    CreateRuleFile("check.lua", R"(
+        function match(data)
+            return true, a .. b
+        end
+    )");
+    ASSERT_TRUE(cloned->add_rule("check", "test_data/rules/check.lua", &error));
+
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("check", adapter, result, &error));
+    EXPECT_EQ(result.message, "12");
+}
+
+// --- 复杂场景测试 ---
+
+TEST_F(RuleEngineTest, Clone_ComplexRealWorldScenario) {
+    RuleEngine engine;
+    std::string error;
+
+    // 添加多个工具文件
+    CreateRuleFile("validators.lua", R"(
+        validators = {}
+        function validators.is_adult(data)
+            return data.age and data.age >= 18
+        end
+        function validators.has_email(data)
+            return data.email and #data.email > 0
+        end
+    )");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/validators.lua", &error));
+
+    CreateRuleFile("scorers.lua", R"(
+        scorers = {}
+        function scorers.calculate_score(data)
+            local score = 0
+            if data.age and data.age >= 18 then score = score + 20 end
+            if data.vip then score = score + 30 end
+            if data.email and #data.email > 0 then score = score + 10 end
+            return score
+        end
+    )");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/scorers.lua", &error));
+
+    // 注册 C++ 函数
+    ASSERT_TRUE(engine.register_function("get_timestamp", test_cpp_function, &error));
+
+    // 添加多个规则
+    CreateRuleFile("adult_check.lua", R"(
+        function match(data)
+            if validators.is_adult(data) then
+                return true, "成年用户"
+            end
+            return false, "未成年用户"
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("adult_check", "test_data/rules/adult_check.lua", &error));
+
+    CreateRuleFile("score_check.lua", R"(
+        function match(data)
+            local score = scorers.calculate_score(data)
+            local ts = ljre.get_timestamp()
+            if score >= 30 then
+                return true, "分数=" .. score .. ", 时间戳=" .. ts
+            end
+            return false, "分数不足: " .. score
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("score_check", "test_data/rules/score_check.lua", &error));
+
+    // 克隆引擎
+    auto cloned = engine.clone(RuleEngine::ALL, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 验证所有内容都已克隆
+    EXPECT_EQ(cloned->get_rule_count(), 2);
+    EXPECT_EQ(cloned->get_registered_functions().size(), 1);
+
+    // 测试克隆的规则能正常工作
+    json data1 = {{"age", 25}, {"email", "test@example.com"}, {"vip", true}};
+    JsonAdapter adapter1(data1);
+    MatchResult result1;
+    ASSERT_TRUE(cloned->match_rule("adult_check", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+    EXPECT_EQ(result1.message, "成年用户");
+
+    ASSERT_TRUE(cloned->match_rule("score_check", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+    EXPECT_THAT(result1.message, testing::HasSubstr("分数="));
+    EXPECT_THAT(result1.message, testing::HasSubstr("时间戳=42"));
+}
+
+// --- 验证克隆后功能完整性 ---
+
+TEST_F(RuleEngineTest, Clone_ClonedEngineSupportsReload) {
+    RuleEngine engine;
+    std::string error;
+
+    CreateRuleFile("reload_test.lua", R"(
+        function match(data)
+            return true, "version 1"
+        end
+    )");
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/reload_test.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::RULES, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    // 修改规则文件
+    CreateRuleFile("reload_test.lua", R"(
+        function match(data)
+            return true, "version 2"
+        end
+    )");
+
+    // 重新加载规则
+    ASSERT_TRUE(cloned->reload_rule("rule1", &error));
+
+    // 验证规则已更新
+    json data = {{}};
+    JsonAdapter adapter(data);
+    MatchResult result;
+    ASSERT_TRUE(cloned->match_rule("rule1", adapter, result, &error));
+    EXPECT_EQ(result.message, "version 2");
+}
+
+TEST_F(RuleEngineTest, Clone_ClonedEngineSupportsRemoveRule) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/always_fail.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::RULES, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    EXPECT_EQ(cloned->get_rule_count(), 2);
+
+    // 删除规则
+    ASSERT_TRUE(cloned->remove_rule("rule1"));
+
+    EXPECT_EQ(cloned->get_rule_count(), 1);
+    EXPECT_FALSE(cloned->has_rule("rule1"));
+    EXPECT_TRUE(cloned->has_rule("rule2"));
+
+    // 原引擎不受影响
+    EXPECT_EQ(engine.get_rule_count(), 2);
+    EXPECT_TRUE(engine.has_rule("rule1"));
+}
+
+TEST_F(RuleEngineTest, Clone_ClonedEngineSupportsClearRules) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+    ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/always_fail.lua", &error));
+
+    auto cloned = engine.clone(RuleEngine::RULES, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    cloned->clear_rules();
+    EXPECT_EQ(cloned->get_rule_count(), 0);
+
+    // 原引擎不受影响
+    EXPECT_EQ(engine.get_rule_count(), 2);
+}
+
+TEST_F(RuleEngineTest, Clone_ClonedEngineSupportsUnregisterFunction) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.register_function("func1", test_cpp_function, &error));
+    ASSERT_TRUE(engine.register_function("func2", test_cpp_add, &error));
+
+    auto cloned = engine.clone(RuleEngine::CPP_FUNCTIONS, &error);
+    ASSERT_NE(cloned, nullptr);
+
+    EXPECT_EQ(cloned->get_registered_functions().size(), 2);
+
+    // 注销函数
+    ASSERT_TRUE(cloned->unregister_function("func1"));
+
+    EXPECT_EQ(cloned->get_registered_functions().size(), 1);
+
+    // 原引擎不受影响
+    EXPECT_EQ(engine.get_registered_functions().size(), 2);
+}
+
+// --- 便捷方法完整性测试 ---
+
+TEST_F(RuleEngineTest, Clone_ConvenienceMethods_AllWorkCorrectly) {
+    RuleEngine engine;
+    std::string error;
+
+    // 准备引擎内容
+    CreateRuleFile("utils.lua", "utils = {}");
+    ASSERT_TRUE(engine.add_lua_file("test_data/rules/utils.lua", &error));
+
+    ASSERT_TRUE(engine.register_function("func", test_cpp_function, &error));
+
+    TestClass obj;
+    ASSERT_TRUE(engine.register_function("member", &TestClass::get_value_dispatcher, &obj, &error));
+
+    ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
+
+    // 测试 clone_lua_files
+    auto clone1 = engine.clone_lua_files(&error);
+    ASSERT_NE(clone1, nullptr);
+    EXPECT_TRUE(error.empty());
+
+    // 测试 clone_cpp_functions
+    auto clone2 = engine.clone_cpp_functions(&error);
+    ASSERT_NE(clone2, nullptr);
+    EXPECT_TRUE(error.empty());
+    EXPECT_EQ(clone2->get_registered_functions().size(), 2); // 普通函数 + 成员函数
+
+    // 测试 clone_rules
+    auto clone3 = engine.clone_rules(&error);
+    ASSERT_NE(clone3, nullptr);
+    EXPECT_TRUE(error.empty());
+    EXPECT_EQ(clone3->get_rule_count(), 1);
+
+    // 测试 clone_safe
+    auto clone4 = engine.clone_safe(&error);
+    ASSERT_NE(clone4, nullptr);
+    EXPECT_TRUE(error.empty());
+    EXPECT_EQ(clone4->get_rule_count(), 1);
+    EXPECT_EQ(clone4->get_registered_functions().size(), 2);
+}

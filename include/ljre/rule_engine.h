@@ -149,6 +149,14 @@ public:
         lua_pushcclosure(L, dispatcher, 1);  // 1 个 upvalue，通过 lua_upvalueindex(1) 访问
         lua_rawset(L, -3);  // ljre[function_name] = closure
 
+        // 记录到元数据（用于 clone）
+        RegisteredFunctionInfo info;
+        info.type = RegisteredFunctionInfo::MEMBER;
+        info.name = function_name;
+        info.function_ptr = reinterpret_cast<void*>(dispatcher);
+        info.instance_ptr = static_cast<void*>(instance);
+        _metadata.registered_functions[function_name] = info;
+
         return true;
     }
 
@@ -209,6 +217,44 @@ public:
      */
     bool add_lua_file(const std::string& file_path, std::string* error_msg = nullptr);
 
+    // === Clone 方法 ===
+
+    // 克隆选项位标志
+    enum CloneOption : uint32_t {
+        NONE = 0,                      // 不克隆任何内容，返回空引擎
+        LUA_FILES = 1 << 0,           // 克隆 Lua 公共文件
+        CPP_FUNCTIONS = 1 << 1,       // 克隆 C++ 普通函数
+        CPP_MEMBER_FUNCTIONS = 1 << 2,// 克隆 C++ 成员函数
+        RULES = 1 << 3,               // 克隆规则文件
+        ALL = LUA_FILES | CPP_FUNCTIONS | CPP_MEMBER_FUNCTIONS | RULES
+    };
+
+    using CloneOptions = uint32_t;
+
+    // 克隆当前引擎，创建一个独立的副本
+    // options: 位标志组合，指定要克隆哪些内容
+    // error_msg: 错误信息输出（可选）
+    // 返回: 成功返回新引擎指针，失败返回 nullptr
+    std::unique_ptr<RuleEngine> clone(CloneOptions options = ALL,
+                                       std::string* error_msg = nullptr) const;
+
+    // 便捷克隆方法
+    std::unique_ptr<RuleEngine> clone_lua_files(std::string* error_msg = nullptr) const {
+        return clone(LUA_FILES, error_msg);
+    }
+
+    std::unique_ptr<RuleEngine> clone_cpp_functions(std::string* error_msg = nullptr) const {
+        return clone(CPP_FUNCTIONS | CPP_MEMBER_FUNCTIONS, error_msg);
+    }
+
+    std::unique_ptr<RuleEngine> clone_rules(std::string* error_msg = nullptr) const {
+        return clone(RULES, error_msg);
+    }
+
+    std::unique_ptr<RuleEngine> clone_safe(std::string* error_msg = nullptr) const {
+        return clone(ALL, error_msg);
+    }
+
 protected:
     // 用于测试：允许派生类访问内部状态
     // 测试类可以继承 RuleEngine 并访问这些成员
@@ -220,8 +266,35 @@ private:
         std::string file_path;
     };
 
+    // 注册的函数信息（用于 clone）
+    struct RegisteredFunctionInfo {
+        enum FunctionType {
+            NORMAL,       // 普通函数：int (*)(lua_State*)
+            MEMBER        // 成员函数：int (Class::*dispatcher)(lua_State*)
+        };
+
+        FunctionType type;
+        std::string name;
+        void* function_ptr;   // 函数指针
+        void* instance_ptr;   // 实例指针（仅 MEMBER 类型）
+    };
+
+    // 引擎元数据（用于 clone）
+    struct EngineMetadata {
+        std::vector<std::string> loaded_lua_files;
+        std::map<std::string, RegisteredFunctionInfo> registered_functions;
+        std::map<std::string, std::string> rule_files;
+
+        void clear() {
+            loaded_lua_files.clear();
+            registered_functions.clear();
+            rule_files.clear();
+        }
+    };
+
     LuaState _lua_state;
     std::unordered_map<std::string, Rule> _rules;
+    mutable EngineMetadata _metadata;
 
     // 内部方法：加载规则文件
     bool load_rule_file(const std::string& file_path, std::string* error_msg);

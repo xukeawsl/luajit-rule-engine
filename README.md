@@ -13,8 +13,9 @@
 - **JIT 控制**: 支持运行时动态启用/禁用/刷新 JIT 编译器
 - **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math、jit），不开放 io/os/debug 等危险接口
 - **零依赖（除 LuaJIT）**: 只依赖 LuaJIT 和 nlohmann/json（header-only）
-- **完善的测试**: 包含 282 个单元测试，覆盖所有核心功能和错误场景
+- **完善的测试**: 包含 325 个单元测试，覆盖所有核心功能和错误场景
 - **性能测试套件**: 45+ benchmark 测试用例，详细对比 LuaJIT vs Native 性能
+- **引擎克隆**: 支持规则引擎克隆，可复制规则、Lua 文件、C++ 函数等
 
 ## 编码规范
 
@@ -320,6 +321,16 @@ tests/
 │   │   ├── 异常处理最佳实践测试
 │   │   ├── 直接调用测试（不使用 pcall）
 │   │   └── 多函数异常处理测试
+│   ├── Clone 功能测试（43个测试用例）
+│   │   ├── 基本克隆测试（NONE, RULES, LUA_FILES, CPP_FUNCTIONS, CPP_MEMBER_FUNCTIONS, ALL）
+│   │   ├── 便捷方法测试（clone_rules, clone_lua_files, clone_cpp_functions, clone_safe）
+│   │   ├── 组合选项测试
+│   │   ├── 错误处理测试
+│   │   ├── 独立性测试
+│   │   ├── 多次克隆测试
+│   │   ├── 边界情况测试
+│   │   ├── 复杂场景测试
+│   │   └── 功能验证测试
 │   └── 深度限制集成测试（4个测试用例）
 └── integration_test.cpp        # 集成测试（15个测试用例）
     ├── 端到端工作流测试
@@ -331,9 +342,9 @@ tests/
 - lua_state_test: 52 个测试用例
 - lua_stack_guard_test: 17 个测试用例
 - data_adapter_test: 55 个测试用例（+9 深度限制测试）
-- rule_engine_test: 143 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试）
+- rule_engine_test: 186 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试、+43 Clone 功能测试）
 - integration_test: 15 个测试用例（+4 深度限制集成测试）
-- **总计**: 282 个测试用例，100% 通过
+- **总计**: 325 个测试用例，100% 通过
 
 ### 测试覆盖率目标
 
@@ -911,6 +922,91 @@ engine.add_lua_file("utils.lua", &error);        // 定义 utils.* 函数
 - 引擎只负责加载执行，不做任何限制
 - 后加载的文件会覆盖同名变量
 - 支持与 C++ 注册函数混合使用
+
+#### 引擎克隆
+
+支持创建规则引擎的克隆副本，可以选择性克隆规则、Lua 文件、C++ 函数等内容。
+
+**克隆选项**：
+```cpp
+enum class CloneOption {
+    NONE = 0,                      // 不克隆任何内容
+    LUA_FILES = 1 << 0,            // 只克隆 Lua 公共函数文件
+    CPP_FUNCTIONS = 1 << 1,        // 只克隆普通 C++ 函数
+    CPP_MEMBER_FUNCTIONS = 1 << 2, // 只克隆类成员函数
+    RULES = 1 << 3,                // 只克隆规则
+    ALL = LUA_FILES | CPP_FUNCTIONS | CPP_MEMBER_FUNCTIONS | RULES  // 克隆所有内容
+};
+```
+
+**支持按位或组合**：
+```cpp
+auto options = CloneOption::RULES | CloneOption::LUA_FILES;
+```
+
+**克隆方法**：
+```cpp
+// 克隆引擎（返回新创建的引擎实例）
+std::unique_ptr<RuleEngine> clone(CloneOption options) const;
+
+// 便捷方法
+std::unique_ptr<RuleEngine> clone_rules() const;              // 只克隆规则
+std::unique_ptr<RuleEngine> clone_lua_files() const;          // 只克隆 Lua 文件
+std::unique_ptr<RuleEngine> clone_cpp_functions() const;      // 只克隆 C++ 函数
+std::unique_ptr<RuleEngine> clone_safe() const;               // 克隆所有内容（ALL）
+```
+
+**使用示例**：
+```cpp
+RuleEngine engine;
+std::string error;
+
+// 加载规则
+engine.add_rule("rule1", "path/to/rule1.lua", &error);
+engine.add_rule("rule2", "path/to/rule2.lua", &error);
+
+// 加载 Lua 公共函数
+engine.add_lua_file("utils.lua", &error);
+
+// 注册 C++ 函数
+engine.register_function("get_time", get_time_func, &error);
+
+// 克隆所有内容
+auto cloned_engine = engine.clone(CloneOption::ALL);
+
+// 或使用便捷方法
+auto cloned_engine2 = engine.clone_safe();
+
+// 克隆的引擎是独立的，可以独立工作
+MatchResult result;
+cloned_engine->match_rule("rule1", adapter, result);
+```
+
+**选择性克隆**：
+```cpp
+// 只克隆规则
+auto rules_only = engine.clone(CloneOption::RULES);
+
+// 只克隆 Lua 文件
+auto lua_files_only = engine.clone(CloneOption::LUA_FILES);
+
+// 只克隆 C++ 函数（包括普通函数和成员函数）
+auto cpp_funcs_only = engine.clone(CloneOption::CPP_FUNCTIONS | CloneOption::CPP_MEMBER_FUNCTIONS);
+
+// 克隆规则和 Lua 文件
+auto rules_and_lua = engine.clone(CloneOption::RULES | CloneOption::LUA_FILES);
+```
+
+**克隆的独立性**：
+- 克隆的引擎与原引擎完全独立
+- 各自拥有独立的 Lua 状态
+- 修改克隆引擎不影响原引擎
+- 可以用于多线程场景（每个线程一个克隆）
+
+**注意事项**：
+- 克隆操作会创建新的 Lua 状态，开销较大
+- 克隆的 C++ 成员函数使用相同的实例指针
+- 规则文件路径会被复制，但不会重新加载文件内容
 
 ### ⚠️ 重要：C++ 异常处理说明
 

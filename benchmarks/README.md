@@ -20,7 +20,8 @@ benchmarks/
 │   │   ├── basic_benchmark.cpp      # 基准测试
 │   │   ├── stress_benchmark.cpp     # 压力测试
 │   │   ├── comparison_benchmark.cpp # 对比测试
-│   │   └── scaling_benchmark.cpp    # 扩展性测试
+│   │   ├── scaling_benchmark.cpp    # 扩展性测试
+│   │   └── clone_benchmark.cpp      # Clone 方法性能测试
 │   └── rules/                  # Lua 规则文件
 │       ├── simple_age_check.lua
 │       ├── medium_validation.lua
@@ -81,6 +82,7 @@ make -j$(nproc)
 - `build/benchmarks/stress_benchmark`
 - `build/benchmarks/comparison_benchmark`
 - `build/benchmarks/scaling_benchmark`
+- `build/benchmarks/clone_benchmark`
 
 ## 使用方法
 
@@ -101,6 +103,9 @@ cd build
 
 # 运行扩展性测试
 ./benchmarks/scaling_benchmark
+
+# 运行 Clone 性能测试
+./benchmarks/clone_benchmark
 ```
 
 ### Google Benchmark 常用选项
@@ -191,6 +196,46 @@ cd build
 ./benchmarks/scaling_benchmark --benchmark_filter=BM_DataSize
 ```
 
+### 5. Clone 方法性能测试 (clone_benchmark)
+
+测试 RuleEngine::clone() 方法在不同场景下的性能表现：
+
+- **不同规则数量的克隆性能**: 10/50/100/200/500/1000/5000/10000 条规则
+- **复杂规则的克隆性能**: 复杂逻辑规则的大规模克隆
+- **包含 Lua 公共文件的克隆**: 测试 Lua 文件克隆开销
+- **包含 C++ 函数的克隆**: 测试 C++ 函数注册克隆开销
+- **不同克隆选项性能**: 对比不同 CloneOptions 的性能差异
+
+**运行示例**：
+```bash
+# 运行所有 clone 性能测试
+./benchmarks/clone_benchmark
+
+# 只测试特定规模的克隆
+./benchmarks/clone_benchmark --benchmark_filter=Clone_100Rules
+
+# 运行更长时间以获得稳定结果
+./benchmarks/clone_benchmark --benchmark_min_time=30
+
+# 输出 JSON 格式结果
+./benchmarks/clone_benchmark --benchmark_format=json > clone_results.json
+```
+
+**性能指标**：
+- 克隆耗时（ms）
+- 吞吐量（operations/second）
+- 不同规模下的扩展性
+
+**典型测试结果参考**（性能模式下）：
+
+| 规模 | 预期耗时 | 吞吐量 |
+|-----|---------|--------|
+| 10 规则 | < 1 ms | > 1000 ops/s |
+| 100 规则 | 1-5 ms | 200-1000 ops/s |
+| 1000 规则 | 10-50 ms | 20-100 ops/s |
+| 5000 规则 | 50-200 ms | 5-20 ops/s |
+| 10000 规则 | 100-400 ms | 2.5-10 ops/s |
+
 ## 性能测试建议
 
 ### 测试环境准备
@@ -242,6 +287,7 @@ mkdir -p benchmarks/results
 ./benchmarks/stress_benchmark --benchmark_format=json > benchmarks/results/stress.json
 ./benchmarks/comparison_benchmark --benchmark_format=json > benchmarks/results/comparison.json
 ./benchmarks/scaling_benchmark --benchmark_format=json > benchmarks/results/scaling.json
+./benchmarks/clone_benchmark --benchmark_format=json > benchmarks/results/clone.json
 ```
 
 #### 生成测试报告

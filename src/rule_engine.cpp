@@ -120,6 +120,9 @@ bool RuleEngine::add_rule(const std::string& rule_name, const std::string& file_
     rule.file_path = file_path;
     _rules[rule_name] = rule;
 
+    // 记录到元数据
+    _metadata.rule_files[rule_name] = file_path;
+
     return true;
     // 栈守卫析构时自动清理栈
 }
@@ -468,6 +471,14 @@ bool RuleEngine::register_function(const std::string& function_name,
     lua_pushcfunction(L, function_ptr);
     lua_rawset(L, -3);
 
+    // 记录到元数据
+    RegisteredFunctionInfo info;
+    info.type = RegisteredFunctionInfo::NORMAL;
+    info.name = function_name;
+    info.function_ptr = reinterpret_cast<void*>(function_ptr);
+    info.instance_ptr = nullptr;
+    _metadata.registered_functions[function_name] = info;
+
     return true;
 }
 
@@ -500,6 +511,9 @@ bool RuleEngine::unregister_function(const std::string& function_name) {
     lua_pushnil(L);
     lua_rawset(L, -3);
 
+    // 从元数据中删除
+    _metadata.registered_functions.erase(function_name);
+
     return true;
 }
 
@@ -514,6 +528,9 @@ void RuleEngine::clear_registered_functions() {
     // 删除整个 ljre 表
     lua_pushnil(L);
     lua_setglobal(L, "ljre");
+
+    // 清理元数据
+    _metadata.registered_functions.clear();
 }
 
 bool RuleEngine::has_function(const std::string& function_name) {
@@ -581,6 +598,9 @@ bool RuleEngine::add_lua_file(const std::string& file_path, std::string* error_m
         return false;
     }
 
+    // 记录到元数据
+    _metadata.loaded_lua_files.push_back(file_path);
+
     // 文件执行后，定义的全局变量会自动可用
     // 引擎不需要做任何额外处理
 
@@ -601,6 +621,67 @@ void RuleEngine::ensure_ljre_table() {
     lua_pop(L, 1);  // 弹出非 table 值（可能是 nil）
     lua_createtable(L, 0, 0);  // 创建新 table
     lua_setglobal(L, "ljre");
+}
+
+// ============================================================================
+// Clone 方法实现
+// ============================================================================
+
+std::unique_ptr<RuleEngine> RuleEngine::clone(CloneOptions options,
+                                               std::string* error_msg) const {
+    auto new_engine = std::make_unique<RuleEngine>();
+
+    if (!new_engine->_lua_state.is_valid()) {
+        return nullptr;
+    }
+
+    if (options == NONE) {
+        return new_engine;
+    }
+
+    // 1. 克隆 Lua 公共文件
+    if (options & LUA_FILES) {
+        for (const auto& file : _metadata.loaded_lua_files) {
+            if (!new_engine->add_lua_file(file, error_msg)) {
+                return nullptr;
+            }
+        }
+    }
+
+    // 2. 克隆 C++ 普通函数
+    if (options & CPP_FUNCTIONS) {
+        for (const auto& [name, info] : _metadata.registered_functions) {
+            if (info.type == RegisteredFunctionInfo::NORMAL) {
+                auto func = reinterpret_cast<int (*)(lua_State*)>(info.function_ptr);
+                if (!new_engine->register_function(name, func, error_msg)) {
+                    return nullptr;
+                }
+            }
+        }
+    }
+
+    // 3. 克隆 C++ 成员函数
+    if (options & CPP_MEMBER_FUNCTIONS) {
+        for (const auto& [name, info] : _metadata.registered_functions) {
+            if (info.type == RegisteredFunctionInfo::MEMBER) {
+                auto func = reinterpret_cast<int (*)(lua_State*)>(info.function_ptr);
+                if (!new_engine->register_function(name, func, info.instance_ptr, error_msg)) {
+                    return nullptr;
+                }
+            }
+        }
+    }
+
+    // 4. 克隆规则文件
+    if (options & RULES) {
+        for (const auto& [rule_name, file_path] : _metadata.rule_files) {
+            if (!new_engine->add_rule(rule_name, file_path, error_msg)) {
+                return nullptr;
+            }
+        }
+    }
+
+    return new_engine;
 }
 
 } // namespace ljre

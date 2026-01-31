@@ -75,6 +75,15 @@ target_link_libraries(scaling_benchmark PRIVATE
     benchmark_common
 )
 
+# Clone 性能测试可执行文件
+add_executable(clone_benchmark
+    src/benchmarks/clone_benchmark.cpp
+)
+
+target_link_libraries(clone_benchmark PRIVATE
+    benchmark_common
+)
+
 # 创建 results 目录
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/benchmarks/results)
 
@@ -84,3 +93,4 @@ message(STATUS "  - basic_benchmark: 基准性能测试")
 message(STATUS "  - stress_benchmark: 压力测试")
 message(STATUS "  - comparison_benchmark: LuaJIT vs Native 对比测试")
 message(STATUS "  - scaling_benchmark: 扩展性测试")
+message(STATUS "  - clone_benchmark: Clone 方法性能测试")

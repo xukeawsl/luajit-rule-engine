@@ -136,10 +136,21 @@ LuaJIT Rule Engine 是一个基于 C++17 和 LuaJIT-2.1.0-beta3 的高性能规�
 │ + clear_registered_functions(): void                     │
 │ + has_function(name): bool                               │
 │ + get_registered_functions(): vector<string>             │
+│ ├─────────────────────────────────────────────────────┤
+│ │ Lua 公共函数加载功能                                    │
+│ + add_lua_file(file_path): bool                         │
+│ ├─────────────────────────────────────────────────────┤
+│ │ 引擎克隆功能                                            │
+│ + clone(options): unique_ptr<RuleEngine>                │
+│ + clone_rules(): unique_ptr<RuleEngine>                 │
+│ + clone_lua_files(): unique_ptr<RuleEngine>             │
+│ + clone_cpp_functions(): unique_ptr<RuleEngine>         │
+│ + clone_safe(): unique_ptr<RuleEngine>                  │
 ├─────────────────────────────────────────────────────────┤
 │ - call_match_function(name, adapter, result): bool       │
 │ - init_rule_functions_table(): void                      │
 │ - ensure_ljre_table(): void                              │
+│ - load_rule_file(file_path): bool                       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -334,7 +345,168 @@ int safe_function(lua_State* L) {
 4. ✅ **手动转换可以保留完整的错误信息，便于调试**
 5. ✅ **无论是否手动捕获，都建议在 Lua 端使用 `pcall()` 保护**
 
-### 3.2 LuaState (Lua 状态管理)
+### 3.2 引擎克隆功能
+
+**职责**：
+- 创建规则引擎的克隆副本
+- 支持选择性克隆规则、Lua 文件、C++ 函数
+- 保持克隆引擎与原引擎的独立性
+
+**克隆选项**：
+
+```cpp
+enum CloneOption : uint32_t {
+    NONE = 0,                      // 不克隆任何内容
+    LUA_FILES = 1 << 0,            // 只克隆 Lua 公共函数文件
+    CPP_FUNCTIONS = 1 << 1,        // 只克隆普通 C++ 函数
+    CPP_MEMBER_FUNCTIONS = 1 << 2, // 只克隆类成员函数
+    RULES = 1 << 3,                // 只克隆规则
+    ALL = LUA_FILES | CPP_FUNCTIONS | CPP_MEMBER_FUNCTIONS | RULES
+};
+```
+
+**克隆流程**：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    引擎克隆流程                            │
+└─────────────────────────────────────────────────────────┘
+
+源引擎                     目标引擎（新建）
+   │                            │
+   │ 1. 创建新的 RuleEngine       │
+   │    └── 创建新的 LuaState     │
+   │                            │
+   │ 2. 克隆规则（如果选项包含）  │
+   │    ├── 遍历源引擎的规则      │
+   │    ├── 读取规则文件路径      │
+   │    └── 在目标引擎中加载      │
+   │                            │
+   │ 3. 克隆 Lua 文件（如果包含） │
+   │    ├── 遍历已加载的 Lua 文件 │
+   │    ├── 读取文件路径          │
+   │    └── 在目标引擎中加载      │
+   │                            │
+   │ 4. 克隆 C++ 函数（如果包含） │
+   │    ├── 遍历已注册的函数      │
+   │    ├── 普通函数：重新注册    │
+   │    └── 成员函数：使用相同实例 │
+   │                            │
+   ▼                            ▼
+返回 unique_ptr<RuleEngine>
+```
+
+**克隆实现细节**：
+
+```cpp
+// 克隆规则
+if (options & CloneOption::RULES) {
+    for (const auto& [name, info] : source._metadata.rule_files) {
+        // 使用原规则文件路径重新加载
+        target.add_rule(name, info, &error);
+    }
+}
+
+// 克隆 Lua 公共函数
+if (options & CloneOption::LUA_FILES) {
+    for (const auto& path : source._metadata.loaded_lua_files) {
+        // 重新加载 Lua 文件
+        target.add_lua_file(path, &error);
+    }
+}
+
+// 克隆 C++ 函数
+if (options & (CloneOption::CPP_FUNCTIONS | CloneOption::CPP_MEMBER_FUNCTIONS)) {
+    for (const auto& [name, info] : source._metadata.registered_functions) {
+        if (info.type == RegisteredFunctionInfo::NORMAL) {
+            if (options & CloneOption::CPP_FUNCTIONS) {
+                // 重新注册普通函数
+                target.register_function(name, info.function_ptr, &error);
+            }
+        } else if (info.type == RegisteredFunctionInfo::MEMBER) {
+            if (options & CloneOption::CPP_MEMBER_FUNCTIONS) {
+                // 重新注册成员函数（使用相同实例指针）
+                target.register_function(name, info.function_ptr,
+                                        info.instance_ptr, &error);
+            }
+        }
+    }
+}
+```
+
+**独立性保证**：
+
+```
+源引擎                    克隆引擎
+┌─────────────────┐     ┌─────────────────┐
+│ LuaState #1     │     │ LuaState #2     │
+│ ├─ Registry     │     │ ├─ Registry     │
+│ ├─ Rules        │     │ ├─ Rules        │
+│ └─ Functions    │     │ └─ Functions    │
+└─────────────────┘     └─────────────────┘
+         │                       │
+         └─────── 独立 ───────────┘
+
+- 各自独立的 Lua 状态
+- 修改克隆不影响原引擎
+- 各自可以独立加载/卸载规则
+- C++ 成员函数共享实例指针
+```
+
+**便捷方法**：
+
+```cpp
+// 只克隆规则
+auto rules_clone = engine.clone_rules();
+
+// 只克隆 Lua 文件
+auto lua_clone = engine.clone_lua_files();
+
+// 只克隆 C++ 函数（普通函数 + 成员函数）
+auto funcs_clone = engine.clone_cpp_functions();
+
+// 克隆所有内容（安全方式）
+auto full_clone = engine.clone_safe();
+```
+
+**使用场景**：
+
+1. **多线程环境**
+   ```cpp
+   // 每个线程一个克隆引擎
+   std::vector<std::thread> threads;
+   for (int i = 0; i < 4; ++i) {
+       threads.emplace_back([engine_ptr = engine.clone_safe()]() {
+           // 每个线程独立的引擎实例
+           process_data(*engine_ptr);
+       });
+   }
+   ```
+
+2. **批量处理隔离**
+   ```cpp
+   // 为每个批次创建独立引擎
+   for (const auto& batch : batches) {
+       auto batch_engine = engine.clone_rules();
+       process_batch(batch_engine, batch);
+   }
+   ```
+
+3. **测试和调试**
+   ```cpp
+   // 克隆引擎用于测试，不影响生产引擎
+   auto test_engine = engine.clone_safe();
+   run_tests(test_engine);
+   ```
+
+**优势**：
+- **独立性**：克隆引擎完全独立，互不影响
+- **灵活性**：支持选择性克隆，按需复制
+- **安全性**：原引擎不受克隆影响
+- **多线程友好**：每个线程可有自己的克隆
+- **快速部署**：克隆比手动配置更快
+
+### 3.3 LuaState (Lua 状态管理)
 
 **职责**：
 - 管理 Lua 状态的生命周期（RAII）
@@ -1221,11 +1393,11 @@ luajit-rule-engine
           │  (多组件协同测试)     │
           └──────────────────────┘
       ┌──────────────────────────────────┐
-      │     Unit Tests (单元测试)         │  258 个测试用例
+      │     Unit Tests (单元测试)         │  301 个测试用例
       │  - LuaState: 52                  │  > 90%
       │  - LuaStackGuard: 17             │
       │  - DataAdapter/JsonAdapter: 55   │
-      │  - RuleEngine: 134               │
+      │  - RuleEngine: 177               │
       └──────────────────────────────────┘
 
 测试工具:
@@ -1243,10 +1415,10 @@ LuaState                 52         ≥90%
 LuaStackGuard            17         ≥90%
 DataAdapter              36         ≥90%
 JsonAdapter              55         ≥90%  (+9 深度限制测试)
-RuleEngine              143         ≥90%  (+11 JIT 控制测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试)
+RuleEngine              186         ≥90%  (+11 JIT 控制测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试、+43 Clone 功能测试)
 Integration              15         ≥80%  (+4 深度限制测试)
 ────────────────────────────────────────
-总计                     282        ≥85%
+总计                     325        ≥85%
 ```
 
 ---
@@ -1326,8 +1498,8 @@ LuaJIT Rule Engine 是一个设计精良、实现规范的高性能规则引擎�
 1. **高性能**：LuaJIT JIT 编译，接近原生代码执行速度
 2. **动态配置**：支持规则热更新，无需重启服务
 3. **安全可靠**：沙箱环境 + 栈守卫，确保运行安全
-4. **易于扩展**：适配器模式支持多种数据格式；支持 C++ 函数注册扩展功能；支持 Lua 公共函数加载
-5. **高测试覆盖**：282 个测试用例，覆盖率 ≥85%
+4. **易于扩展**：适配器模式支持多种数据格式；支持 C++ 函数注册扩展功能；支持 Lua 公共函数加载；支持引擎克隆
+5. **高测试覆盖**：325 个测试用例，覆盖率 ≥85%
 
 ### 14.2 架构特点
 
