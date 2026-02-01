@@ -2,6 +2,55 @@
 
 所有重要的项目变更都将记录在此文件中。
 
+## [未发布] - 2026-02
+
+### 新增 (Added)
+
+#### RuleEngineWrapper - 多线程安全包装器
+- **核心功能**: 提供线程安全的规则引擎访问，支持热更新
+  - 新增 `RuleEngineWrapper` 类，封装多线程访问逻辑
+  - 使用 Copy-on-Write 模式：shared_ptr + 原子操作
+  - Thread-Local Storage：每个线程维护独立的引擎副本
+  - Versioning：通过版本号判断是否需要重新克隆
+  - Shared Ownership：使用 shared_ptr 确保旧引擎在被使用时不会被销毁
+- **API 设计**：
+  - `set_template_engine(std::shared_ptr<RuleEngine>)`: 设置模板引擎（线程安全）
+  - `get_engine()`: 获取线程本地引擎，返回 `shared_ptr<const RuleEngine>`
+  - `get_version()`: 获取当前全局版本号
+- **Const 正确性**：
+  - 返回 `shared_ptr<const RuleEngine>`，只能调用 const 方法
+  - 防止调用配置方法（add_rule, register_function 等）
+  - 允许调用查询方法（match_rule, has_rule, get_rule_count 等）
+- **使用场景**：
+  - 多线程服务（如 brpc）：每个请求线程安全访问引擎
+  - 支持热更新：无需重启服务，运行时更新规则配置
+  - 引擎本身非线程安全，通过包装器实现线程安全
+- **shared_ptr 安全性**：
+  - 旧引擎的 shared_ptr 在热更新后仍然有效
+  - 自动管理生命周期，所有引用释放后自动销毁
+  - 不会出现悬空指针或内存泄漏
+- **性能特性**：
+  - 首次调用 get_engine() 需要克隆模板引擎（开销较大）
+  - 后续调用直接返回 shared_ptr 拷贝（开销极小，< 1 微秒）
+  - 热更新后，各线程下次调用时自动克隆新版本
+- **测试覆盖**: 新增 15 个包装器测试用例
+  - 基础功能测试（4个）
+  - shared_ptr 安全性测试（2个）
+  - 热更新测试（2个，包含并发场景）
+  - 线程本地存储测试（2个）
+  - 并发压力测试（2个）
+  - 边界情况测试（2个）
+  - 性能测试（1个）
+- **总测试数量**: 从 325 个增加到 340 个测试用例（+15个）
+- **文档更新**:
+  - 在 README.md 中添加 "RuleEngineWrapper" 章节
+  - 包含完整的 API 使用示例和多线程场景说明
+  - 在 ARCHITECTURE.md 中更新分层架构图
+  - 在 TESTING.md 中添加包装器测试分类
+  - 在 CHANGELOG.md 中记录此重要新增功能
+
+---
+
 ## [未发布] - 2026-01
 
 ### 新增 (Added)

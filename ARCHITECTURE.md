@@ -11,6 +11,7 @@ LuaJIT Rule Engine 是一个基于 C++17 和 LuaJIT-2.1.0-beta3 的高性能规�
 - **灵活适配**：适配器模式支持多种数据格式
 - **安全可靠**：RAII 栈守卫 + Lua 沙箱环境
 - **零依赖**：仅依赖 LuaJIT 和 nlohmann/json
+- **多线程支持**：RuleEngineWrapper 提供线程安全的访问和热更新
 
 ### 1.2 设计目标
 
@@ -34,10 +35,17 @@ LuaJIT Rule Engine 是一个基于 C++17 和 LuaJIT-2.1.0-beta3 的高性能规�
                          │
 ┌────────────────────────▼─────────────────────────────────────┐
 │                       接口层 (Interface Layer)                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
-│  │  RuleEngine  │  │ DataAdapter  │  │  LuaState    │        │
-│  │   (外观模式)  │  │  (适配器模式) │  │   (RAII)     │        │
-│  └──────────────┘  └──────────────┘  └──────────────┘        │
+│  ┌──────────────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │ RuleEngineWrapper    │  │ DataAdapter  │  │  LuaState    │ │
+│  │ (多线程安全包装器)    │  │  (适配器模式) │  │   (RAII)     │ │
+│  └──────────┬───────────┘  └──────────────┘  └──────────────┘ │
+│             │                                                   │
+│             │ 包含                                             │
+│             ▼                                                   │
+│  ┌──────────────┐                                              │
+│  │  RuleEngine  │                                              │
+│  │   (外观模式)  │                                              │
+│  └──────────────┘                                              │
 └────────────────────────┬────────────────────────────────────┘
                          │
 ┌────────────────────────▼─────────────────────────────────────┐
@@ -71,29 +79,42 @@ LuaJIT Rule Engine 是一个基于 C++17 和 LuaJIT-2.1.0-beta3 的高性能规�
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      RuleEngine                         │
+│                   RuleEngineWrapper                      │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │  - 规则生命周期管理                                 │  │
-│  │  - 规则匹配调度                                     │  │
-│  │  - Lua 函数表管理                                   │  │
+│  │  - 线程安全的引擎访问                                │  │
+│  │  - 热更新支持                                       │  │
+│  │  - Thread-Local Storage                           │  │
+│  │  - Copy-on-Write                                  │  │
 │  └──────────────────────────────────────────────────┘  │
-│           │                    │                        │
-│           ▼                    ▼                        │
-│  ┌──────────────┐      ┌──────────────┐                │
-│  │   LuaState   │      │ DataAdapter  │                │
-│  │  (组合关系)   │      │  (依赖关系)   │                │
-│  └──────────────┘      └──────────────┘                │
-│         │                                              │
-│         ▼                                              │
-│  ┌──────────────┐      ┌──────────────┐                │
-│  │ LuaStackGuard│      │  JsonAdapter │                │
-│  │  (临时引用)   │      │  (实现类)    │                │
-│  └──────────────┘      └──────────────┘                │
+│           │                                              │
+│           │ 包含 (shared_ptr)                            │
+│           ▼                                              │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │                 RuleEngine                         │  │
+│  │  ┌────────────────────────────────────────────┐  │  │
+│  │  │  - 规则生命周期管理                           │  │  │
+│  │  │  - 规则匹配调度                               │  │  │
+│  │  │  - Lua 函数表管理                             │  │  │
+│  │  └────────────────────────────────────────────┘  │  │
+│  │           │                    │                    │  │
+│  │           ▼                    ▼                    │  │
+│  │  ┌──────────────┐      ┌──────────────┐            │  │
+│  │  │   LuaState   │      │ DataAdapter  │            │  │
+│  │  │  (组合关系)   │      │  (依赖关系)   │            │  │
+│  │  └──────────────┘      └──────────────┘            │  │
+│  │         │                                              │
+│  │         ▼                                              │
+│  │  ┌──────────────┐      ┌──────────────┐            │  │
+│  │  │ LuaStackGuard│      │  JsonAdapter │            │  │
+│  │  │  (临时引用)   │      │  (实现类)    │            │  │
+│  │  └──────────────┘      └──────────────┘            │  │
+│  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 
 图例:
 ── 组合关系 (Composition)
 ... 依赖关系 (Dependency)
+~~~ 包含关系 (Containment via shared_ptr)
 ```
 
 ---
@@ -506,7 +527,248 @@ auto full_clone = engine.clone_safe();
 - **多线程友好**：每个线程可有自己的克隆
 - **快速部署**：克隆比手动配置更快
 
-### 3.3 LuaState (Lua 状态管理)
+### 3.3 RuleEngineWrapper (多线程安全包装器)
+
+**职责**：
+- 提供线程安全的规则引擎访问
+- 支持运行时热更新
+- 自动管理线程本地引擎副本
+- 使用 shared_ptr 确保旧引擎仍然有效
+
+**设计模式**：
+- **Copy-on-Write**: 模板引擎使用 shared_ptr + 原子操作
+- **Thread-Local Storage**: 每个线程维护独立的引擎副本
+- **Versioning**: 通过版本号判断是否需要重新克隆
+- **Shared Ownership**: 使用 shared_ptr 确保旧引擎在被使用时不会被销毁
+
+**类图**：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                 RuleEngineWrapper                        │
+├─────────────────────────────────────────────────────────┤
+│ - _template_engine: shared_ptr<RuleEngine>              │
+│ - _global_version: atomic<uint64_t>                      │
+├─────────────────────────────────────────────────────────┤
+│ + RuleEngineWrapper()                                    │
+│ + ~RuleEngineWrapper()                                   │
+│ + set_template_engine(engine): void                      │
+│ + get_engine(): shared_ptr<const RuleEngine>             │
+│ + get_version(): uint64_t                                │
+├─────────────────────────────────────────────────────────┤
+│ - ThreadLocalEngine: struct                              │
+│   - engine: shared_ptr<RuleEngine>                       │
+│   - version: uint64_t                                    │
+│ - get_thread_local(): ThreadLocalEngine*                 │
+└─────────────────────────────────────────────────────────┘
+
+禁止拷贝和移动:
+- RuleEngineWrapper(const RuleEngineWrapper&) = delete
+- RuleEngineWrapper& operator=(const RuleEngineWrapper&) = delete
+```
+
+**线程本地存储结构**：
+
+```cpp
+struct ThreadLocalEngine {
+    std::shared_ptr<RuleEngine> engine;  // 线程本地引擎实例
+    uint64_t version = 0;                 // 当前引擎的版本号
+};
+
+static thread_local ThreadLocalEngine local;
+```
+
+**工作流程**：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                get_engine() 工作流程                      │
+└─────────────────────────────────────────────────────────┘
+
+1. 获取线程本地存储
+   ThreadLocalEngine* local = get_thread_local();
+
+2. 检查版本是否过期
+   if (local->version != current_global_version) {
+
+3. 原子加载模板引擎
+     template_engine = atomic_load(&_template_engine);
+
+4. 克隆模板引擎到线程本地
+     local->engine = template_engine->clone(ALL, &error);
+     local->version = current_global_version;
+   }
+
+5. 返回 shared_ptr 的拷贝（引用计数+1）
+   return local->engine;
+```
+
+**热更新流程**：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                热更新时序图                               │
+└─────────────────────────────────────────────────────────┘
+
+热加载线程              RuleEngineWrapper        工作线程
+    │                         │                     │
+    │ 创建新引擎               │                     │
+    │─────────────────────────>│                     │
+    │                         │                     │
+    │ set_template_engine     │                     │
+    │─────────────────────────>│                     │
+    │                         │ atomic_store        │
+    │                         │ 版本号 +1            │
+    │                         │<────────────────────│
+    │                         │ get_engine()        │
+    │                         │ 检查版本过期         │
+    │                         │────────────────────>│
+    │                         │                     │ 克隆新引擎
+    │                         │<────────────────────│
+    │                         │ 返回新版本引擎       │
+    │<─────────────────────────┘
+    │                         │
+
+关键点:
+1. 热更新不影响正在使用的请求
+2. 旧引擎的 shared_ptr 仍然有效
+3. 各线程下次调用 get_engine() 时自动克隆新版本
+```
+
+**shared_ptr 安全性保证**：
+
+```
+场景 1: 热更新前的引擎
+  auto engine1 = wrapper.get_engine();  // 版本 1
+  // ... 热更新发生 ...
+  // engine1 仍然有效，因为持有 shared_ptr
+
+场景 2: 热更新后的引擎
+  auto engine2 = wrapper.get_engine();  // 版本 2
+  // engine2 是新的引擎实例
+
+场景 3: 同一线程多次调用
+  auto e1 = wrapper.get_engine();
+  auto e2 = wrapper.get_engine();
+  // e1 和 e2 指向同一个对象（相同 shared_ptr）
+
+内存管理:
+- 旧引擎在所有 shared_ptr 引用释放后自动销毁
+- 无需手动管理生命周期
+```
+
+**性能特性**：
+
+```
+第一次调用 get_engine():
+  - 检查版本、克隆模板引擎
+  - 开销较大（取决于引擎复杂度）
+  - 后续调用直接返回 shared_ptr 拷贝
+
+后续调用 get_engine():
+  - 只需返回 shared_ptr 拷贝
+  - 开销极小（< 1 微秒）
+  - 无锁、无克隆
+
+热更新后的第一次调用:
+  - 检测到版本过期
+  - 重新克隆新版本
+  - 后续调用又回到快速路径
+```
+
+**使用示例**：
+
+```cpp
+// 全局包装器
+RuleEngineWrapper g_wrapper;
+
+// 初始化线程（只执行一次）
+void init() {
+    auto engine = std::make_shared<RuleEngine>();
+    engine->load_rule_config("config.lua");
+    g_wrapper.set_template_engine(engine);
+}
+
+// 热加载线程
+void reload_thread() {
+    while (running) {
+        wait_for_change();
+
+        auto new_engine = std::make_shared<RuleEngine>();
+        new_engine->load_rule_config("new_config.lua");
+
+        // 原子替换，无阻塞
+        g_wrapper.set_template_engine(new_engine);
+    }
+}
+
+// brpc 处理线程
+void process_request(const Request& req) {
+    // 获取引擎（自动处理版本更新）
+    auto engine = g_wrapper.get_engine();
+
+    // 使用引擎
+    JsonAdapter adapter(req.json());
+    MatchResult result;
+    engine->match_rule("rule1", adapter, result);
+}
+```
+
+**Const 正确性**：
+
+```cpp
+// 返回 shared_ptr<const RuleEngine>
+// 只能调用 const 方法：
+auto engine = wrapper.get_engine();
+
+// ✅ 允许：
+engine->match_rule(...);
+engine->match_all_rules(...);
+engine->has_rule(...);
+engine->get_all_rules();
+engine->get_rule_count();
+
+// ❌ 禁止：
+engine->add_rule(...);           // 编译错误
+engine->remove_rule(...);        // 编译错误
+engine->load_rule_config(...);   // 编译错误
+engine->register_function(...);  // 编译错误
+engine->clear_rules();           // 编译错误
+```
+
+**线程安全性**：
+
+```
+set_template_engine():
+  - 使用 atomic_store，原子操作
+  - 无阻塞，不影响其他线程
+  - 版本号自动递增
+
+get_engine():
+  - 无锁设计（只读操作使用 atomic_load）
+  - 每个线程独立存储
+  - 热更新不影响正在使用的引擎
+
+内存安全:
+  - shared_ptr 保证引用计数正确
+  - 旧引擎在所有引用释放后自动销毁
+  - 不会出现悬空指针
+```
+
+**优势**：
+- **线程安全**：无锁设计，高并发性能好
+- **热更新友好**：不影响正在处理的请求
+- **自动管理**：无需手动处理版本更新
+- **类型安全**：const 正确性，防止误操作
+- **高性能**：后续调用开销极小（< 1 μs）
+
+**注意事项**：
+- 首次调用 `get_engine()` 会克隆模板引擎（开销较大）
+- 不推荐缓存 `shared_ptr`，应该在每次请求时获取最新版本
+- 热更新后，各线程会在下次调用时自动克隆新版本
+- RuleEngineWrapper 本身不应该被拷贝或移动
+
+### 3.4 LuaState (Lua 状态管理)
 
 **职责**：
 - 管理 Lua 状态的生命周期（RAII）
@@ -580,7 +842,7 @@ void LuaState::open_libraries() {
   → 清除 JIT 缓存，重新编译代码
 ```
 
-### 3.3 LuaStackGuard (栈守卫)
+### 3.5 LuaStackGuard (栈守卫)
 
 **职责**：
 - 自动管理 Lua 栈的平衡
@@ -642,7 +904,7 @@ guard1 析构:  [ ]                        (恢复到 guard1._top = 0)
 最终结果: 栈恢复平衡
 ```
 
-### 3.4 DataAdapter (数据适配器接口)
+### 3.6 DataAdapter (数据适配器接口)
 
 **职责**：
 - 提供不同数据类型的统一接口
@@ -690,7 +952,7 @@ C++ 数据类型 ──── DataAdapter ──── Lua Table
                         └── ... (用户自定义)
 ```
 
-### 3.5 JsonAdapter (JSON 适配器实现)
+### 3.7 JsonAdapter (JSON 适配器实现)
 
 **类型转换映射**：
 
@@ -1393,11 +1655,12 @@ luajit-rule-engine
           │  (多组件协同测试)     │
           └──────────────────────┘
       ┌──────────────────────────────────┐
-      │     Unit Tests (单元测试)         │  301 个测试用例
+      │     Unit Tests (单元测试)         │  325 个测试用例
       │  - LuaState: 52                  │  > 90%
       │  - LuaStackGuard: 17             │
       │  - DataAdapter/JsonAdapter: 55   │
-      │  - RuleEngine: 177               │
+      │  - RuleEngine: 186               │
+      │  - RuleEngineWrapper: 15         │  (NEW)
       └──────────────────────────────────┘
 
 测试工具:
@@ -1416,9 +1679,10 @@ LuaStackGuard            17         ≥90%
 DataAdapter              36         ≥90%
 JsonAdapter              55         ≥90%  (+9 深度限制测试)
 RuleEngine              186         ≥90%  (+11 JIT 控制测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试、+43 Clone 功能测试)
+RuleEngineWrapper        15         ≥90%  (NEW)
 Integration              15         ≥80%  (+4 深度限制测试)
 ────────────────────────────────────────
-总计                     325        ≥85%
+总计                     340        ≥85%
 ```
 
 ---

@@ -31,6 +31,9 @@ add_ljre_test(data_adapter_test)
 # RuleEngine 测试
 add_ljre_test(rule_engine_test)
 
+# RuleEngineWrapper 测试
+add_ljre_test(rule_engine_wrapper_test)
+
 # 集成测试
 add_ljre_test(integration_test)
 
@@ -46,6 +49,8 @@ if(BUILD_COVERAGE)
         target_link_options(data_adapter_test PRIVATE --coverage)
         target_compile_options(rule_engine_test PRIVATE --coverage)
         target_link_options(rule_engine_test PRIVATE --coverage)
+        target_compile_options(rule_engine_wrapper_test PRIVATE --coverage)
+        target_link_options(rule_engine_wrapper_test PRIVATE --coverage)
         target_compile_options(integration_test PRIVATE --coverage)
         target_link_options(integration_test PRIVATE --coverage)
     endif()

@@ -175,7 +175,7 @@ bool RuleEngine::reload_rule(const std::string& rule_name, std::string* error_ms
 }
 
 bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
-                            MatchResult& result, std::string* error_msg) {
+                            MatchResult& result, std::string* error_msg) const {
     if (!_lua_state.is_valid()) {
         if (error_msg) {
             *error_msg = "Lua state is invalid";
@@ -197,7 +197,7 @@ bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& dat
 bool RuleEngine::match_rule(const std::vector<std::string>& rule_names,
                              const DataAdapter& data_adapter,
                              std::map<std::string, MatchResult>& results,
-                             std::string* error_msg) {
+                             std::string* error_msg) const {
     if (!_lua_state.is_valid()) {
         if (error_msg) {
             *error_msg = "Lua state is invalid";
@@ -314,7 +314,7 @@ bool RuleEngine::match_rule(const std::vector<std::string>& rule_names,
 
 bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
                                  std::map<std::string, MatchResult>& results,
-                                 std::string* error_msg) {
+                                 std::string* error_msg) const {
     std::vector<std::string> rule_names;
     rule_names.reserve(_rules.size());
 
@@ -375,7 +375,7 @@ bool RuleEngine::load_rule_file(const std::string& file_path, std::string* error
 bool RuleEngine::call_match_function(const std::string& rule_name,
                                      const DataAdapter& data_adapter,
                                      MatchResult& result,
-                                     std::string* error_msg) {
+                                     std::string* error_msg) const {
     lua_State* L = _lua_state.get();
     LuaStackGuard guard(L);  // 自动管理栈平衡
 

@@ -58,7 +58,7 @@ public:
     // 检查指定规则是否匹配
     // data_adapter 用于将业务数据转换为Lua table
     bool match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
-                    MatchResult& result, std::string* error_msg = nullptr);
+                    MatchResult& result, std::string* error_msg = nullptr) const;
 
     // 检查多个规则是否匹配
     // results 存储 {规则名: 匹配结果} 的映射，按规则名字母顺序排序
@@ -67,12 +67,12 @@ public:
     bool match_rule(const std::vector<std::string>& rule_names,
                     const DataAdapter& data_adapter,
                     std::map<std::string, MatchResult>& results,
-                    std::string* error_msg = nullptr);
+                    std::string* error_msg = nullptr) const;
 
     // 检查所有规则是否匹配
     bool match_all_rules(const DataAdapter& data_adapter,
                          std::map<std::string, MatchResult>& results,
-                         std::string* error_msg = nullptr);
+                         std::string* error_msg = nullptr) const;
 
     // 获取所有规则信息
     std::vector<RuleInfo> get_all_rules() const;
@@ -303,7 +303,7 @@ private:
     bool call_match_function(const std::string& rule_name,
                              const DataAdapter& data_adapter,
                              MatchResult& result,
-                             std::string* error_msg);
+                             std::string* error_msg) const;
 
     // 内部方法：确保 ljre 全局表存在（保持栈平衡）
     void ensure_ljre_table();

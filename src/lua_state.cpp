@@ -79,7 +79,7 @@ bool LuaState::load_buffer(const char* buffer, size_t size, const char* name,
     return true;
 }
 
-std::string LuaState::get_error_string() {
+std::string LuaState::get_error_string() const {
     if (!_L) {
         return "Failed to get error string: Lua state is null";
     }

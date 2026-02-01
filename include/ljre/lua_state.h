@@ -42,7 +42,7 @@ public:
                      std::string* error_msg = nullptr);
 
     // 从栈顶获取错误信息
-    std::string get_error_string();
+    std::string get_error_string() const;
 
 private:
     lua_State* _L;

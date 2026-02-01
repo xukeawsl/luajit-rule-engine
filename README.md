@@ -13,9 +13,10 @@
 - **JIT 控制**: 支持运行时动态启用/禁用/刷新 JIT 编译器
 - **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math、jit），不开放 io/os/debug 等危险接口
 - **零依赖（除 LuaJIT）**: 只依赖 LuaJIT 和 nlohmann/json（header-only）
-- **完善的测试**: 包含 325 个单元测试，覆盖所有核心功能和错误场景
+- **完善的测试**: 包含 340 个单元测试，覆盖所有核心功能和错误场景
 - **性能测试套件**: 45+ benchmark 测试用例，详细对比 LuaJIT vs Native 性能
 - **引擎克隆**: 支持规则引擎克隆，可复制规则、Lua 文件、C++ 函数等
+- **多线程支持**: 提供 RuleEngineWrapper 包装器，支持多线程安全访问和热更新
 
 ## 编码规范
 
@@ -33,7 +34,8 @@ luajit-rule-engine/
 │   ├── lua_state.h                # Lua 状态管理
 │   ├── data_adapter.h             # 数据适配器接口
 │   ├── json_adapter.h             # JSON 适配器
-│   └── rule_engine.h              # 规则引擎核心
+│   ├── rule_engine.h              # 规则引擎核心
+│   └── rule_engine_wrapper.h      # 多线程包装器
 ├── src/                           # 实现文件
 │   ├── lua_state.cpp
 │   ├── json_adapter.cpp
@@ -278,7 +280,15 @@ tests/
 │   ├── 边界条件测试
 │   ├── 栈平衡测试
 │   └── 深度嵌套限制测试（9个测试用例）
-├── rule_engine_test.cpp        # 规则引擎测试（134个测试用例）
+├── rule_engine_wrapper_test.cpp # 规则引擎包装器测试（15个测试用例）
+│   ├── 基础功能测试（4个）
+│   ├── shared_ptr 安全性测试（2个）
+│   ├── 热更新测试（2个）
+│   ├── 线程本地存储测试（2个）
+│   ├── 并发压力测试（2个）
+│   ├── 边界情况测试（2个）
+│   └── 性能测试（1个）
+├── rule_engine_test.cpp        # 规则引擎测试（186个测试用例）
 │   ├── 规则加载和卸载测试
 │   ├── 规则匹配测试（单个和批量）
 │   ├── 规则热更新测试
@@ -342,9 +352,10 @@ tests/
 - lua_state_test: 52 个测试用例
 - lua_stack_guard_test: 17 个测试用例
 - data_adapter_test: 55 个测试用例（+9 深度限制测试）
+- rule_engine_wrapper_test: 15 个测试用例（NEW）
 - rule_engine_test: 186 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试、+43 Clone 功能测试）
 - integration_test: 15 个测试用例（+4 深度限制集成测试）
-- **总计**: 325 个测试用例，100% 通过
+- **总计**: 340 个测试用例，100% 通过
 
 ### 测试覆盖率目标
 
@@ -1007,6 +1018,146 @@ auto rules_and_lua = engine.clone(CloneOption::RULES | CloneOption::LUA_FILES);
 - 克隆操作会创建新的 Lua 状态，开销较大
 - 克隆的 C++ 成员函数使用相同的实例指针
 - 规则文件路径会被复制，但不会重新加载文件内容
+
+### RuleEngineWrapper - 多线程安全包装器
+
+`RuleEngineWrapper` 是为多线程环境设计的包装器，提供线程安全的访问和热更新支持。
+
+**设计特性**：
+- **Copy-on-Write**: 使用 shared_ptr + 原子操作实现无锁热更新
+- **Thread-Local Storage**: 每个线程维护独立的引擎副本
+- **Versioning**: 通过版本号判断是否需要重新克隆
+- **Shared Ownership**: 使用 shared_ptr 确保旧引擎在被使用时不会被销毁
+- **Const Correctness**: 返回 `shared_ptr<const RuleEngine>`，防止调用配置方法
+
+**适用场景**：
+- 多线程服务（如 brpc）
+- 支持热更新配置
+- 引擎本身非线程安全
+
+**使用示例**：
+
+```cpp
+#include "ljre/rule_engine_wrapper.h"
+
+// 全局包装器实例
+ljre::RuleEngineWrapper g_engine_wrapper;
+
+// 初始化引擎（程序启动时）
+void init_engine() {
+    auto engine = std::make_shared<ljre::RuleEngine>();
+    std::string error;
+
+    // 加载规则配置
+    engine->load_rule_config("config.lua", &error);
+
+    // 加载 Lua 公共函数
+    engine->add_lua_file("utils.lua", &error);
+
+    // 注册 C++ 函数
+    engine->register_function("my_func", my_func_ptr, &error);
+
+    // 设置模板引擎
+    g_engine_wrapper.set_template_engine(engine);
+}
+
+// 热加载线程
+void hot_reload_thread() {
+    while (running) {
+        wait_for_config_change();
+
+        // 创建新的引擎实例
+        auto new_engine = std::make_shared<ljre::RuleEngine>();
+        std::string error;
+
+        // 加载新配置
+        new_engine->load_rule_config("new_config.lua", &error);
+        new_engine->add_lua_file("new_utils.lua", &error);
+        new_engine->register_function("new_func", new_func_ptr, &error);
+
+        // 原子替换模板引擎（其他线程会在下次调用时自动克隆）
+        g_engine_wrapper.set_template_engine(new_engine);
+    }
+}
+
+// brpc 服务处理
+void YourService::ProcessRequest(const HttpRequest& req, HttpResponse* resp) {
+    // 获取当前线程的引擎（自动处理版本更新和克隆）
+    auto engine = g_engine_wrapper.get_engine();
+
+    // 使用引擎进行规则判断
+    nlohmann::json req_json = nlohmann::json::parse(req.body());
+    JsonAdapter adapter(req_json);
+    MatchResult result;
+
+    if (engine->match_rule("rule1", adapter, result)) {
+        if (result.matched) {
+            resp->set_body("Matched: " + result.message);
+        } else {
+            resp->set_body("Not matched: " + result.message);
+        }
+    }
+}
+```
+
+**API 参考**：
+
+```cpp
+class RuleEngineWrapper {
+public:
+    // 设置新的模板引擎（线程安全）
+    void set_template_engine(std::shared_ptr<RuleEngine> engine);
+
+    // 获取当前线程的引擎实例（线程安全）
+    // 返回 shared_ptr<const RuleEngine>，只能调用 const 方法
+    std::shared_ptr<const RuleEngine> get_engine();
+
+    // 获取当前全局版本号
+    uint64_t get_version() const;
+};
+```
+
+**线程安全性保证**：
+- `get_engine()`: 无锁，返回 shared_ptr 拷贝
+- `set_template_engine()`: 使用原子操作，无阻塞
+- 热更新不影响正在使用的请求
+- 旧引擎会在所有引用释放后自动销毁
+
+**shared_ptr 安全性**：
+
+```cpp
+// ✅ 推荐：每次请求都获取最新的引擎
+void handle_request(const Request& req) {
+    auto engine = wrapper.get_engine();  // 获取最新版本
+    engine->match_rule(...);
+}  // engine 在请求结束时自动释放
+
+// ✅ 可接受：在同一次请求中多次使用
+void handle_request(const Request& req) {
+    auto engine1 = wrapper.get_engine();
+    // ... 热更新发生 ...
+    auto engine2 = wrapper.get_engine();  // 获取新版本
+
+    engine1->match_rule(...);  // ✅ 使用旧版本，仍然有效
+    engine2->match_rule(...);  // ✅ 使用新版本
+}
+
+// ⚠️ 不推荐但安全：保存 shared_ptr 供后续使用
+std::shared_ptr<const RuleEngine> cached = wrapper.get_engine();
+// ... 后续请求
+cached->match_rule(...);  // ✅ 安全，但使用的是旧版本
+```
+
+**Const 正确性**：
+- 返回 `shared_ptr<const RuleEngine>`，只能调用 const 方法
+- 允许调用：`match_rule`, `match_all_rules`, `has_rule`, `get_all_rules`, `get_rule_count`
+- 禁止调用：`add_rule`, `remove_rule`, `load_rule_config`, `register_function`, `clear_rules`
+
+**注意事项**：
+- 每个线程第一次调用 `get_engine()` 时会克隆模板引擎（开销较大）
+- 后续调用直接返回线程本地的 shared_ptr 拷贝（开销极小，< 1 微秒）
+- 热更新后，各线程下次调用 `get_engine()` 时会自动克隆新版本
+- 不推荐缓存 shared_ptr，应该在每次请求时获取最新版本
 
 ### ⚠️ 重要：C++ 异常处理说明
 
