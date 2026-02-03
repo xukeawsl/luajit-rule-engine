@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ljre/data_adapter.h"
+#include "ljre/basic_data_adapter.h"
 
 #include <string>
 
@@ -9,12 +9,32 @@
 
 namespace ljre {
 
-// nlohmann::json 适配器
-class JsonAdapter : public DataAdapter {
+/**
+ * @brief nlohmann::json 适配器
+ *
+ * 继承自 BasicDataAdapter，同时支持：
+ * - 从 JSON 数据转换为 Lua table
+ * - 动态设置/修改字段（继承自 BasicDataAdapter）
+ *
+ * 使用示例：
+ * @code
+ * auto adapter = std::make_shared<JsonAdapter>(json_data);
+ * adapter->set("extra_field", "value");  // 继承的方法
+ * adapter->set("count", 100);
+ *
+ * engine->match_rule("rule1", adapter, result);
+ * @endcode
+ */
+class JsonAdapter : public BasicDataAdapter {
 public:
     // 默认最大嵌套深度，足够处理大多数场景，同时避免栈溢出
     static constexpr size_t MAX_NESTING_DEPTH = 8192;
 
+    /**
+     * @brief 构造函数
+     * @param data JSON 数据
+     * @param max_nesting_depth 最大嵌套深度
+     */
     explicit JsonAdapter(const nlohmann::json& data,
                         size_t max_nesting_depth = MAX_NESTING_DEPTH)
         : _data(data)

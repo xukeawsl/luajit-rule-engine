@@ -243,7 +243,8 @@ static void BM_Scale_RuleCount_1(benchmark::State& state) {
 
     for (auto _ : state) {
         std::map<std::string, ljre::MatchResult> results;
-        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_all_rules(adapter, results);
         benchmark::DoNotOptimize(results);
     }
 
@@ -260,7 +261,8 @@ static void BM_Scale_RuleCount_2(benchmark::State& state) {
 
     for (auto _ : state) {
         std::map<std::string, ljre::MatchResult> results;
-        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_all_rules(adapter, results);
         benchmark::DoNotOptimize(results);
     }
 
@@ -279,7 +281,8 @@ static void BM_Scale_RuleCount_4(benchmark::State& state) {
 
     for (auto _ : state) {
         std::map<std::string, ljre::MatchResult> results;
-        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_all_rules(adapter, results);
         benchmark::DoNotOptimize(results);
     }
 

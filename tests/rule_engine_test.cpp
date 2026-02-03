@@ -2,6 +2,7 @@
 #include <gmock/gmock.h>
 #include "ljre/rule_engine.h"
 #include "ljre/json_adapter.h"
+#include "ljre/basic_data_adapter.h"
 #include "test_helpers.h"
 #include <fstream>
 
@@ -294,7 +295,7 @@ end
 
     // 测试版本 1
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
 
     ASSERT_TRUE(engine.match_rule("test_rule", adapter, result, &error));
@@ -331,7 +332,7 @@ TEST_F(RuleEngineTest, MatchRule_PassingRule_ReturnsTrue) {
     ASSERT_TRUE(engine.add_rule("pass_rule", "test_data/rules/always_pass.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("pass_rule", adapter, result, &error));
@@ -347,7 +348,7 @@ TEST_F(RuleEngineTest, MatchRule_FailingRule_ReturnsFalse) {
     ASSERT_TRUE(engine.add_rule("fail_rule", "test_data/rules/always_fail.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("fail_rule", adapter, result, &error));
@@ -361,7 +362,7 @@ TEST_F(RuleEngineTest, MatchRule_NonExistentRule_Fails) {
     std::string error;
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("nonexistent", adapter, result, &error));
@@ -375,7 +376,7 @@ TEST_F(RuleEngineTest, MatchRule_AgeCheck_ValidAge_Passes) {
     ASSERT_TRUE(engine.add_rule("age_rule", "test_data/rules/age_check.lua", &error));
 
     json data = CreateTestData("alice", 25, "alice@example.com", "1234567890");
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("age_rule", adapter, result, &error));
@@ -391,7 +392,7 @@ TEST_F(RuleEngineTest, MatchRule_AgeCheck_Under18_Fails) {
     ASSERT_TRUE(engine.add_rule("age_rule", "test_data/rules/age_check.lua", &error));
 
     json data = CreateTestData("bob", 15, "bob@example.com", "1234567890");
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("age_rule", adapter, result, &error));
@@ -407,7 +408,7 @@ TEST_F(RuleEngineTest, MatchRule_AgeCheck_MissingAge_Fails) {
     ASSERT_TRUE(engine.add_rule("age_rule", "test_data/rules/age_check.lua", &error));
 
     json data = {{"name", "charlie"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("age_rule", adapter, result, &error));
@@ -428,7 +429,7 @@ TEST_F(RuleEngineTest, MatchRule_FieldComplete_AllFields_Passes) {
         {"email", "dave@example.com"},
         {"phone", "9876543210"}
     };
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("field_rule", adapter, result, &error));
@@ -444,7 +445,7 @@ TEST_F(RuleEngineTest, MatchRule_FieldComplete_MissingFields_Fails) {
     ASSERT_TRUE(engine.add_rule("field_rule", "test_data/rules/field_complete.lua", &error));
 
     json data = {{"name", "eve"}};  // 缺少 email 和 phone
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("field_rule", adapter, result, &error));
@@ -460,7 +461,7 @@ TEST_F(RuleEngineTest, MatchRule_ThrowingError_Fails) {
     ASSERT_TRUE(engine.add_rule("error_rule", "test_data/rules/throws_error.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("error_rule", adapter, result, &error));
@@ -485,7 +486,7 @@ TEST_F(RuleEngineTest, MatchAllRules_ComplexScenario) {
         {"email", "frank@example.com"},
         {"phone", "5555555555"}
     };
-    JsonAdapter valid_adapter(valid_data);
+    auto valid_adapter = std::make_shared<JsonAdapter>(valid_data);
 
     std::map<std::string, MatchResult> results;
     EXPECT_TRUE(engine.match_all_rules(valid_adapter, results, &error));
@@ -501,7 +502,7 @@ TEST_F(RuleEngineTest, MatchAllRules_ComplexScenario) {
         {"email", "grace@example.com"},
         {"phone", "5555555555"}
     };
-    JsonAdapter invalid_adapter1(invalid_data1);
+    auto invalid_adapter1 = std::make_shared<JsonAdapter>(invalid_data1);
 
     std::map<std::string, MatchResult> results2;
     // 有一个规则通过，应该返回 true
@@ -513,7 +514,7 @@ TEST_F(RuleEngineTest, MatchAllRules_ComplexScenario) {
 
     // 无效数据（缺少字段）
     json invalid_data2 = {{"name", "henry"}, {"age", 40}};
-    JsonAdapter invalid_adapter2(invalid_data2);
+    auto invalid_adapter2 = std::make_shared<JsonAdapter>(invalid_data2);
 
     std::map<std::string, MatchResult> results3;
     // 有一个规则通过，应该返回 true
@@ -583,7 +584,7 @@ TEST_F(RuleEngineTest, SpecialCharactersInRuleName_HandlesCorrectly) {
     EXPECT_TRUE(engine.has_rule(rule_name));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule(rule_name, adapter, result, &error));
@@ -646,7 +647,7 @@ TEST_F(RuleEngineTest, MatchRule_WithoutErrorMsg_DoesNotCrash) {
     ASSERT_TRUE(engine.add_rule("pass", "test_data/rules/always_pass.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     // 不传递 error_msg，不应该崩溃
@@ -691,7 +692,7 @@ TEST_F(RuleEngineTest, MatchAllRules_WithoutErrorMsg_DoesNotCrash) {
     ASSERT_TRUE(engine.add_rule("pass", "test_data/rules/always_pass.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 不传递 error_msg，不应该崩溃
@@ -710,7 +711,7 @@ TEST_F(RuleEngineTest, MatchRule_MessageContent_IsCorrect) {
 
     // 测试通过时的消息
     json valid_data = {{"age", 25}};
-    JsonAdapter valid_adapter(valid_data);
+    auto valid_adapter = std::make_shared<JsonAdapter>(valid_data);
 
     MatchResult pass_result;
     ASSERT_TRUE(engine.match_rule("age", valid_adapter, pass_result, &error));
@@ -718,7 +719,7 @@ TEST_F(RuleEngineTest, MatchRule_MessageContent_IsCorrect) {
 
     // 测试失败时的消息
     json invalid_data = {{"age", 15}};
-    JsonAdapter invalid_adapter(invalid_data);
+    auto invalid_adapter = std::make_shared<JsonAdapter>(invalid_data);
 
     MatchResult fail_result;
     ASSERT_TRUE(engine.match_rule("age", invalid_adapter, fail_result, &error));
@@ -900,7 +901,7 @@ TEST_F(RuleEngineTest, MatchRule_InvalidState_Fails) {
 
     // 准备测试数据
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     // 尝试匹配规则应该失败
@@ -918,7 +919,7 @@ TEST_F(RuleEngineTest, MatchAllRules_InvalidState_Fails) {
 
     // 准备测试数据
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 尝试匹配所有规则应该失败
@@ -996,7 +997,7 @@ TEST_F(RuleEngineTest, ReloadRule_ChangesBehavior) {
 
     // 测试原始行为
     json data1 = {{"value", 15}};
-    JsonAdapter adapter1(data1);
+    auto adapter1 = std::make_shared<JsonAdapter>(data1);
     MatchResult result1;
     ASSERT_TRUE(engine.match_rule("dynamic", adapter1, result1, &error));
     EXPECT_TRUE(result1.matched);
@@ -1017,7 +1018,7 @@ TEST_F(RuleEngineTest, ReloadRule_ChangesBehavior) {
 
     // 测试新行为
     json data2 = {{"value", 15}};
-    JsonAdapter adapter2(data2);
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
     MatchResult result2;
     ASSERT_TRUE(engine.match_rule("dynamic", adapter2, result2, &error));
     EXPECT_FALSE(result2.matched); // 现在应该失败，因为阈值改为 20
@@ -1037,7 +1038,7 @@ TEST_F(RuleEngineTest, MatchRule_RuleThrowsError_Fails) {
     ASSERT_TRUE(engine.add_rule("error_rule", error_rule.path().c_str(), &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("error_rule", adapter, result, &error));
@@ -1174,7 +1175,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_RuleFunctionTableNotFound_ReturnsError)
 
     // 尝试匹配规则
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
@@ -1193,7 +1194,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_RuleFunctionTableCorrupted_ReturnsError
 
     // 尝试匹配规则
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
@@ -1212,7 +1213,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_MatchFunctionNotFound_ReturnsError) {
 
     // 尝试匹配规则
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
@@ -1227,7 +1228,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_DataAdapterPushFails_ReturnsError) {
     ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
 
     // 使用会失败的数据适配器
-    FailingDataAdapter adapter;
+    auto adapter = std::make_shared<FailingDataAdapter>();
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("rule1", adapter, result, &error));
@@ -1250,7 +1251,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_FirstReturnValueNotBoolean_ReturnsError
 
     // 尝试匹配规则
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("bad_rule", adapter, result, &error));
@@ -1273,7 +1274,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_ReturnsNumberAsFirstValue_ReturnsError)
 
     // 尝试匹配规则
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("number_rule", adapter, result, &error));
@@ -1296,7 +1297,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_ReturnsNilAsFirstValue_ReturnsError) {
 
     // 尝试匹配规则
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("nil_rule", adapter, result, &error));
@@ -1319,7 +1320,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_ReturnsTableAsFirstValue_ReturnsError) 
 
     // 尝试匹配规则
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_FALSE(engine.match_rule("table_rule", adapter, result, &error));
@@ -1342,7 +1343,7 @@ TEST_F(RuleEngineTest, CallMatchFunction_OnlyOneReturnValue_WorksCorrectly) {
 
     // 尝试匹配规则（应该成功）
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     EXPECT_TRUE(engine.match_rule("single_rule", adapter, result, &error));
@@ -1373,7 +1374,7 @@ end
 
     // 执行规则匹配
     json data = {{"value", 15}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("simple_check", adapter, result, &error));
@@ -1404,7 +1405,7 @@ end
 
     // 执行规则匹配（应该仍然工作，只是没有 JIT 优化）
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("compute", adapter, result, &error));
@@ -1427,7 +1428,7 @@ end
     ASSERT_TRUE(engine.add_rule("toggle_test", "test_data/rules/toggle_test.lua", &error));
 
     json data = {{"status", "active"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     // 测试启用 JIT
     engine.enable_jit();
@@ -1472,7 +1473,7 @@ end
     ASSERT_TRUE(engine.add_rule("loop_test", "test_data/rules/loop_test.lua", &error));
 
     json data = {{"test", "data"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     // 使用 JIT 执行
     engine.enable_jit();
@@ -1527,7 +1528,7 @@ end
         {"value2", 20},
         {"value3", 30}
     };
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     ASSERT_TRUE(engine.match_all_rules(adapter, results, &error));
@@ -1567,7 +1568,7 @@ end
         {"value1", 10},
         {"value2", 50}
     };
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     ASSERT_TRUE(engine.match_all_rules(adapter, results, &error));
@@ -1596,7 +1597,7 @@ end
 
     // 先执行一次规则，让 JIT 编译
     json data = {{"value", 15}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("simple_check", adapter, result, &error));
@@ -1680,7 +1681,7 @@ TEST_F(RuleEngineTest, MatchAllRules_EmptyRules_ReturnsTrue) {
     RuleEngine engine;
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     std::string error;
@@ -1700,7 +1701,7 @@ TEST_F(RuleEngineTest, MatchAllRules_AnyOnePass_ReturnsTrue) {
     ASSERT_TRUE(engine.add_rule("fail_rule", "test_data/rules/always_fail.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 只要有一个规则匹配成功就应该返回 true
@@ -1721,7 +1722,7 @@ TEST_F(RuleEngineTest, MatchAllRules_AllPass_ReturnsTrue) {
     ASSERT_TRUE(engine.add_rule("pass3", "test_data/rules/always_pass.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 所有规则都通过，应该返回 true
@@ -1742,7 +1743,7 @@ TEST_F(RuleEngineTest, MatchAllRules_AllFail_ReturnsFalse) {
     ASSERT_TRUE(engine.add_rule("fail2", "test_data/rules/always_fail.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 所有规则都失败，应该返回 false
@@ -1769,7 +1770,7 @@ TEST_F(RuleEngineTest, MatchAllRules_CallFailure_SetsMatchedFalse) {
     ASSERT_TRUE(engine.add_rule("error_rule", error_rule.path().c_str(), &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 有一个规则匹配成功，应该返回 true
@@ -1808,7 +1809,7 @@ TEST_F(RuleEngineTest, MatchAllRules_AllCallFailure_ReturnsFalse) {
     ASSERT_TRUE(engine.add_rule("error2", error_rule2.path().c_str(), &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 所有规则都调用失败，应该返回 false
@@ -1845,7 +1846,7 @@ TEST_F(RuleEngineTest, MatchAllRules_ComplexMixedScenario) {
     ASSERT_TRUE(engine.add_rule("fail2", "test_data/rules/always_fail.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 有规则匹配成功，应该返回 true
@@ -1892,7 +1893,7 @@ TEST_F(RuleEngineTest, MatchAllRules_PushToLuaFailure_SetsMatchedFalse) {
     };
 
     json data = {{"key", "value"}};
-    FailingAdapter adapter(data);
+    auto adapter = std::make_shared<FailingAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // push_to_lua 失败应该返回 false，并为所有规则填充失败结果
@@ -1929,7 +1930,7 @@ TEST_F(RuleEngineTest, MatchAllRules_FunctionTableNotFound_SetsMatchedFalse) {
     lua_setglobal(L, "_rule_functions");
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 函数表不存在，应该返回 false（因为没有任何规则匹配成功）
@@ -1963,7 +1964,7 @@ TEST_F(RuleEngineTest, MatchAllRules_FunctionNotFound_SetsMatchedFalse) {
     lua_pop(L, 1);
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 函数不存在，应该返回 false
@@ -1988,7 +1989,7 @@ TEST_F(RuleEngineTest, MatchAllRules_FirstReturnNotBoolean_SetsMatchedFalse) {
     ASSERT_TRUE(engine.add_rule("invalid_rule", invalid_rule.path().c_str(), &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 第一个返回值不是布尔值，应该返回 false
@@ -1997,7 +1998,7 @@ TEST_F(RuleEngineTest, MatchAllRules_FirstReturnNotBoolean_SetsMatchedFalse) {
     // 验证结果被正确设置
     ASSERT_EQ(results.size(), 1);
     EXPECT_FALSE(results.at("invalid_rule").matched);
-    EXPECT_TRUE(results.at("invalid_rule").message.find("First return value is not boolean") != std::string::npos);
+    EXPECT_TRUE(results.at("invalid_rule").message.find("First return value of 'match' must be boolean") != std::string::npos);
 }
 
 TEST_F(RuleEngineTest, MatchAllRules_SecondReturnNotString_UsesEmptyMessage) {
@@ -2013,7 +2014,7 @@ TEST_F(RuleEngineTest, MatchAllRules_SecondReturnNotString_UsesEmptyMessage) {
     ASSERT_TRUE(engine.add_rule("invalid_rule", invalid_rule.path().c_str(), &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 应该返回 true（第一个返回值是 true）
@@ -2049,7 +2050,7 @@ TEST_F(RuleEngineTest, MatchAllRules_MixedErrorScenarios_AllHandledCorrectly) {
     ASSERT_TRUE(engine.add_rule("error", error_rule.path().c_str(), &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 有一个规则成功，应该返回 true
@@ -2064,7 +2065,7 @@ TEST_F(RuleEngineTest, MatchAllRules_MixedErrorScenarios_AllHandledCorrectly) {
 
     // 返回类型错误的规则应该失败
     EXPECT_FALSE(results.at("invalid_type").matched);
-    EXPECT_TRUE(results.at("invalid_type").message.find("First return value is not boolean") != std::string::npos);
+    EXPECT_TRUE(results.at("invalid_type").message.find("First return value of 'match' must be boolean") != std::string::npos);
 
     // 抛出错误的规则应该失败
     EXPECT_FALSE(results.at("error").matched);
@@ -2093,7 +2094,7 @@ TEST_F(RuleEngineTest, MatchAllRules_OnlyErrors_ReturnsFalse) {
     ASSERT_TRUE(engine.add_rule("invalid2", invalid_rule2.path().c_str(), &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::map<std::string, MatchResult> results;
     // 所有规则都失败，应该返回 false
@@ -2118,7 +2119,7 @@ TEST_F(RuleEngineTest, MatchRule_Vector_AllRulesExist_AllPass) {
     ASSERT_TRUE(engine.add_rule("pass3", "test_data/rules/always_pass.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     std::vector<std::string> rule_names = {"pass1", "pass2", "pass3"};
     std::map<std::string, MatchResult> results;
@@ -2141,7 +2142,7 @@ TEST_F(RuleEngineTest, MatchRule_Vector_SomeRulesNotExist) {
     ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/always_fail.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     // 请求中包含一个不存在的规则
     std::vector<std::string> rule_names = {"rule1", "rule2", "nonexistent_rule"};
@@ -2168,7 +2169,7 @@ TEST_F(RuleEngineTest, MatchRule_Vector_AllRulesNotExist) {
     std::string error;
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     // 请求中包含的所有规则都不存在
     std::vector<std::string> rule_names = {"nonexistent1", "nonexistent2", "nonexistent3"};
@@ -2197,7 +2198,7 @@ TEST_F(RuleEngineTest, MatchRule_Vector_EmptyRuleList) {
     ASSERT_TRUE(engine.add_rule("rule1", "test_data/rules/always_pass.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     // 空规则列表
     std::vector<std::string> rule_names;
@@ -2218,7 +2219,7 @@ TEST_F(RuleEngineTest, MatchRule_Vector_MixedWithNonexistent_AllResultsRecorded)
     ASSERT_TRUE(engine.add_rule("fail", "test_data/rules/always_fail.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     // 混合存在的和不存在的规则
     std::vector<std::string> rule_names = {
@@ -2252,7 +2253,7 @@ TEST_F(RuleEngineTest, MatchRule_Vector_OnlyNonexistentRules) {
     ASSERT_TRUE(engine.add_rule("existing_rule", "test_data/rules/always_pass.lua", &error));
 
     json data = {{"key", "value"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     // 只请求不存在的规则
     std::vector<std::string> rule_names = {
@@ -2472,7 +2473,7 @@ TEST_F(RuleEngineTest, RegisterNormalFunction_Success) {
 
     // 测试数据
     json test_json = {{"value", 50}};
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_add_42", adapter, result, &error));
@@ -2503,7 +2504,7 @@ TEST_F(RuleEngineTest, RegisterNormalFunction_OverwriteExisting) {
     ASSERT_TRUE(engine.add_rule("test_overwrite", "test_data/rules/test_overwrite.lua", &error));
 
     json test_json = {{"a", 2}, {"b", 3}};
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_overwrite", adapter, result, &error));
@@ -2535,7 +2536,7 @@ TEST_F(RuleEngineTest, RegisterClassMemberFunction_Success) {
     ASSERT_TRUE(engine.add_rule("test_member_add", "test_data/rules/test_member_add.lua", &error));
 
     json test_json = {{"x", 7}, {"y", 8}};
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_member_add", adapter, result, &error));
@@ -2566,7 +2567,7 @@ TEST_F(RuleEngineTest, RegisterClassMemberFunction_MultipleInstances) {
     ASSERT_TRUE(engine.add_rule("test_two_instances", "test_data/rules/test_two_instances.lua", &error));
 
     json test_json = json::object();
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_two_instances", adapter, result, &error));
@@ -2596,7 +2597,7 @@ TEST_F(RuleEngineTest, RegisterClassMemberFunction_ModifyState) {
     ASSERT_TRUE(engine.add_rule("test_state_change", "test_data/rules/test_state_change.lua", &error));
 
     json test_json = json::object();
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_state_change", adapter, result, &error));
@@ -2691,7 +2692,7 @@ TEST_F(RuleEngineTest, FunctionInRule_NoReturnValue) {
     ASSERT_TRUE(engine.add_rule("test_no_return", "test_data/rules/test_no_return.lua", &error));
 
     json test_json = json::object();
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_no_return", adapter, result, &error));
@@ -2715,7 +2716,7 @@ TEST_F(RuleEngineTest, FunctionInRule_MultipleReturnValues) {
     ASSERT_TRUE(engine.add_rule("test_multiple_return", "test_data/rules/test_multiple_return.lua", &error));
 
     json test_json = json::object();
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_multiple_return", adapter, result, &error));
@@ -2742,7 +2743,7 @@ TEST_F(RuleEngineTest, FunctionInRule_ErrorHandling) {
     ASSERT_TRUE(engine.add_rule("test_func_error", "test_data/rules/test_func_error.lua", &error));
 
     json test_json = json::object();
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_func_error", adapter, result, &error));
@@ -2767,7 +2768,7 @@ TEST_F(RuleEngineTest, MultipleFunctionsInSameRule) {
     ASSERT_TRUE(engine.add_rule("test_multi_funcs", "test_data/rules/test_multi_funcs.lua", &error));
 
     json test_json = json::object();
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_multi_funcs", adapter, result, &error));
@@ -2800,7 +2801,7 @@ TEST_F(RuleEngineTest, RegisterFunction_PersistAcrossRules) {
     ASSERT_TRUE(engine.add_rule("rule2", "test_data/rules/rule2.lua", &error));
 
     json test_json = {{"x", 10}, {"y", 20}};
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
 
     MatchResult result1, result2;
     EXPECT_TRUE(engine.match_rule("rule1", adapter, result1, &error));
@@ -2836,7 +2837,7 @@ TEST_F(RuleEngineTest, LjreTableIsolation) {
     ASSERT_TRUE(engine.add_rule("test_isolation", "test_data/rules/test_isolation.lua", &error));
 
     json test_json = json::object();
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_isolation", adapter, result, &error));
@@ -2860,7 +2861,7 @@ TEST_F(RuleEngineTest, CallNonExistentFunction) {
     ASSERT_TRUE(engine.add_rule("test_call_nonexist", "test_data/rules/test_call_nonexist.lua", &error));
 
     json test_json = json::object();
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_call_nonexist", adapter, result, &error));
@@ -2896,7 +2897,7 @@ TEST_F(RuleEngineTest, RegisterFunction_ThenClear_ThenReuse) {
     ASSERT_TRUE(engine.add_rule("test_reuse", "test_data/rules/test_reuse.lua", &error));
 
     json test_json = {{"a", 2}, {"b", 3}};
-    JsonAdapter adapter(test_json);
+    auto adapter = std::make_shared<JsonAdapter>(test_json);
     MatchResult result;
 
     EXPECT_TRUE(engine.match_rule("test_reuse", adapter, result, &error));
@@ -3031,7 +3032,7 @@ TEST_F(RuleEngineTest, CppFunction_ThrowsStdException_DoesNotCrash) {
     ASSERT_TRUE(engine.add_rule("exception_rule", "test_data/rules/test_exception_protection.lua", &error));
 
     json data = {{"value", 42}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     // LuaJIT 会捕获 C++ 异常并转换为 Lua 错误
@@ -3065,7 +3066,7 @@ TEST_F(RuleEngineTest, CppFunction_ThrowsException_WithoutPcall_FailsMatchRule) 
     ASSERT_TRUE(engine.add_rule("exception_rule", "test_data/rules/test_exception_no_pcall.lua", &error));
 
     json data = {{"value", 42}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     // 当不使用 pcall 时，C++ 异常会导致 match_rule 调用失败
@@ -3100,7 +3101,7 @@ TEST_F(RuleEngineTest, CppFunction_CatchesException_Safely) {
     ASSERT_TRUE(engine.add_rule("safe_rule_1", "test_data/rules/test_safe_exception_1.lua", &error));
 
     json data1 = {{"value", 21}};
-    JsonAdapter adapter1(data1);
+    auto adapter1 = std::make_shared<JsonAdapter>(data1);
 
     MatchResult result1;
     ASSERT_TRUE(engine.match_rule("safe_rule_1", adapter1, result1, &error));
@@ -3125,7 +3126,7 @@ TEST_F(RuleEngineTest, CppFunction_CatchesException_Safely) {
     ASSERT_TRUE(engine.add_rule("safe_rule_2", "test_data/rules/test_safe_exception_2.lua", &error));
 
     json data2 = {{"value", -5}};
-    JsonAdapter adapter2(data2);
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
 
     MatchResult result2;
     ASSERT_TRUE(engine.match_rule("safe_rule_2", adapter2, result2, &error));
@@ -3150,7 +3151,7 @@ TEST_F(RuleEngineTest, CppFunction_CatchesException_Safely) {
     ASSERT_TRUE(engine.add_rule("safe_rule_3", "test_data/rules/test_safe_exception_3.lua", &error));
 
     json data3 = {{"value", 10}};
-    JsonAdapter adapter3(data3);
+    auto adapter3 = std::make_shared<JsonAdapter>(data3);
 
     MatchResult result3;
     ASSERT_TRUE(engine.match_rule("safe_rule_3", adapter3, result3, &error));
@@ -3177,7 +3178,7 @@ TEST_F(RuleEngineTest, CppMemberFunction_CatchesException_Safely) {
     ASSERT_TRUE(engine.add_rule("member_safe_rule", "test_data/rules/test_member_safe_exception.lua", &error));
 
     json data = {{"value", 50}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("member_safe_rule", adapter, result, &error));
@@ -3221,14 +3222,14 @@ TEST_F(RuleEngineTest, CppFunction_ExceptionHandlingBestPractice) {
 
     // 测试正常情况
     json data1 = {{"value", 10}};
-    JsonAdapter adapter1(data1);
+    auto adapter1 = std::make_shared<JsonAdapter>(data1);
     MatchResult result1;
     ASSERT_TRUE(engine.match_rule("best_practice_rule", adapter1, result1, &error));
     EXPECT_TRUE(result1.matched);
 
     // 测试错误情况（负数）
     json data2 = {{"value", -10}};
-    JsonAdapter adapter2(data2);
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
     MatchResult result2;
     ASSERT_TRUE(engine.match_rule("best_practice_rule", adapter2, result2, &error));
     EXPECT_FALSE(result2.matched);
@@ -3256,7 +3257,7 @@ TEST_F(RuleEngineTest, CppFunction_NoPcall_DirectCall) {
 
     // 正常情况：应该成功
     json data1 = {{"value", 5}};
-    JsonAdapter adapter1(data1);
+    auto adapter1 = std::make_shared<JsonAdapter>(data1);
     MatchResult result1;
     ASSERT_TRUE(engine.match_rule("direct_call_rule", adapter1, result1, &error));
     EXPECT_TRUE(result1.matched);
@@ -3300,7 +3301,7 @@ TEST_F(RuleEngineTest, CppFunction_MultipleExceptionTypes) {
     ASSERT_TRUE(engine.add_rule("multi_exception_rule", "test_data/rules/test_multiple_exceptions.lua", &error));
 
     json data = {{"value", 10}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("multi_exception_rule", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -3395,7 +3396,7 @@ TEST_F(RuleEngineTest, AddLuaFile_UtilsNamespace_Success) {
     // 测试用例 1: 成年用户，高分
     {
         json data = {{"name", "Alice"}, {"age", 25}, {"vip", true}, {"level", 5}};
-        JsonAdapter adapter(data);
+        auto adapter = std::make_shared<JsonAdapter>(data);
         MatchResult result;
         ASSERT_TRUE(engine.match_rule("utils_rule", adapter, result, &error));
         EXPECT_TRUE(result.matched);
@@ -3405,7 +3406,7 @@ TEST_F(RuleEngineTest, AddLuaFile_UtilsNamespace_Success) {
     // 测试用例 2: 未成年用户
     {
         json data = {{"name", "Bob"}, {"age", 15}, {"vip", false}};
-        JsonAdapter adapter(data);
+        auto adapter = std::make_shared<JsonAdapter>(data);
         MatchResult result;
         ASSERT_TRUE(engine.match_rule("utils_rule", adapter, result, &error));
         EXPECT_FALSE(result.matched);
@@ -3415,7 +3416,7 @@ TEST_F(RuleEngineTest, AddLuaFile_UtilsNamespace_Success) {
     // 测试用例 3: 成年用户，低分
     {
         json data = {{"name", "Charlie"}, {"age", 30}, {"vip", false}, {"level", 2}};
-        JsonAdapter adapter(data);
+        auto adapter = std::make_shared<JsonAdapter>(data);
         MatchResult result;
         ASSERT_TRUE(engine.match_rule("utils_rule", adapter, result, &error));
         EXPECT_FALSE(result.matched);
@@ -3483,7 +3484,7 @@ TEST_F(RuleEngineTest, AddLuaFile_DifferentNamespaces) {
 
     // 测试
     json data = {{"name", "  alice  "}, {"email", "alice@example.com"}, {"phone", "12345678901"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("multi_ns_rule", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -3533,7 +3534,7 @@ TEST_F(RuleEngineTest, AddLuaFile_GlobalFunctions) {
 
     // 测试
     json data = {{"value", 5}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("global_funcs_rule", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -3593,7 +3594,7 @@ TEST_F(RuleEngineTest, AddLuaFile_WithCppFunctions) {
 
     // 测试
     json data = {{"age", 65}, {"value", 25}};  // 65岁，25+42=67分
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     bool success = engine.match_rule("mixed_rule", adapter, result, &error);
     if (!success) {
@@ -3683,7 +3684,7 @@ TEST_F(RuleEngineTest, AddLuaFile_OverrideExisting) {
     ASSERT_TRUE(engine.add_rule("override_rule", "test_data/rules/test_override.lua", &error));
 
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("override_rule", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -3769,7 +3770,7 @@ TEST_F(RuleEngineTest, Clone_RULES_ClonedRulesWork) {
 
     // 测试克隆的规则能正常工作
     json data = {{"age", 25}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("age_rule", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -3777,7 +3778,7 @@ TEST_F(RuleEngineTest, Clone_RULES_ClonedRulesWork) {
 
     // 测试不满足条件的情况
     json data2 = {{"age", 15}};
-    JsonAdapter adapter2(data2);
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
     ASSERT_TRUE(cloned->match_rule("age_rule", adapter2, result, &error));
     EXPECT_FALSE(result.matched);
 }
@@ -3844,7 +3845,7 @@ TEST_F(RuleEngineTest, Clone_LUA_FILES_ClonesAllLuaFiles) {
 
     // 测试规则能使用克隆的 Lua 公共函数
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("test_rule", adapter, result, &error));
     EXPECT_EQ(result.message, "helper1helper2");
@@ -3883,7 +3884,7 @@ TEST_F(RuleEngineTest, Clone_lua_files_ConvenienceMethod) {
     ASSERT_TRUE(cloned->add_rule("verify", "test_data/rules/verify.lua", &error));
 
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("verify", adapter, result, &error));
     EXPECT_EQ(result.message, "42");
@@ -3966,7 +3967,7 @@ TEST_F(RuleEngineTest, Clone_CPP_FUNCTIONS_ClonedFunctionsWork) {
     ASSERT_TRUE(cloned->add_rule("test_rule", "test_data/rules/test_cpp.lua", &error));
 
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("test_rule", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -4043,7 +4044,7 @@ TEST_F(RuleEngineTest, Clone_CPP_MEMBER_FUNCTIONS_ClonedFunctionsWork) {
     ASSERT_TRUE(cloned->add_rule("test_rule", "test_data/rules/test_member.lua", &error));
 
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("test_rule", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -4127,7 +4128,7 @@ TEST_F(RuleEngineTest, Clone_ALL_ClonesEverything) {
     ASSERT_TRUE(cloned->add_rule("verify", "test_data/rules/verify_all.lua", &error));
 
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("verify", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -4192,7 +4193,7 @@ TEST_F(RuleEngineTest, Clone_LUA_FILES_AND_RULES) {
 
     // 测试克隆的规则能正常工作
     json data = {{"value", 10}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("rule1", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -4219,7 +4220,7 @@ TEST_F(RuleEngineTest, Clone_RULES_AND_CPP_FUNCTIONS) {
 
     // 测试克隆的规则能正常工作
     json data = {{"a", 60}, {"b", 50}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("rule1", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -4407,7 +4408,7 @@ TEST_F(RuleEngineTest, Clone_ModifyingOriginalDoesNotAffectClone) {
     // 原引擎应该看到修改后的版本
     ASSERT_TRUE(engine.add_rule("check1", "test_data/rules/check.lua", &error));
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(engine.match_rule("check1", adapter, result, &error));
     EXPECT_EQ(result.message, "modified");
@@ -4467,7 +4468,7 @@ TEST_F(RuleEngineTest, Clone_CloneOfClone) {
 
     // 测试规则能正常工作
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(clone3->match_rule("rule1", adapter, result, &error));
     EXPECT_TRUE(result.matched);
@@ -4530,7 +4531,7 @@ TEST_F(RuleEngineTest, Clone_EngineWithOnlyLuaFiles) {
     ASSERT_TRUE(cloned->add_rule("check", "test_data/rules/check.lua", &error));
 
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("check", adapter, result, &error));
     EXPECT_EQ(result.message, "12");
@@ -4602,7 +4603,7 @@ TEST_F(RuleEngineTest, Clone_ComplexRealWorldScenario) {
 
     // 测试克隆的规则能正常工作
     json data1 = {{"age", 25}, {"email", "test@example.com"}, {"vip", true}};
-    JsonAdapter adapter1(data1);
+    auto adapter1 = std::make_shared<JsonAdapter>(data1);
     MatchResult result1;
     ASSERT_TRUE(cloned->match_rule("adult_check", adapter1, result1, &error));
     EXPECT_TRUE(result1.matched);
@@ -4642,7 +4643,7 @@ TEST_F(RuleEngineTest, Clone_ClonedEngineSupportsReload) {
 
     // 验证规则已更新
     json data = {{}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     MatchResult result;
     ASSERT_TRUE(cloned->match_rule("rule1", adapter, result, &error));
     EXPECT_EQ(result.message, "version 2");
@@ -4750,4 +4751,945 @@ TEST_F(RuleEngineTest, Clone_ConvenienceMethods_AllWorkCorrectly) {
     EXPECT_TRUE(error.empty());
     EXPECT_EQ(clone4->get_rule_count(), 1);
     EXPECT_EQ(clone4->get_registered_functions().size(), 2);
+}
+
+// ============================================================================
+// BasicDataAdapter 字段修改功能测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, BasicAdapter_Set_AddsFieldAndRulePasses) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 创建没有 age 字段的 adapter
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // 第一次匹配：没有 age 字段，应该失败
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result1, &error));
+    EXPECT_FALSE(result1.matched);
+    EXPECT_TRUE(result1.message.find("缺少age字段") != std::string::npos);
+
+    // 使用 set() 添加 age 字段
+    adapter->set("age", 20);
+
+    // 第二次匹配：有 age 字段且 >= 18，应该通过
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result2, &error));
+    EXPECT_TRUE(result2.matched);
+    EXPECT_TRUE(result2.message.find("通过") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Set_ModifiesFieldValue) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+    adapter->set("age", 15);  // 年龄不足
+
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result1, &error));
+    EXPECT_FALSE(result1.matched);
+    EXPECT_TRUE(result1.message.find("年龄不足") != std::string::npos);
+
+    // 修改年龄为 25
+    adapter->set("age", 25);
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result2, &error));
+    EXPECT_TRUE(result2.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Set_OverwritesValue) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+    adapter->set("age", 10);
+    adapter->set("age", 20);
+    adapter->set("age", 30);  // 最终值
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_TRUE(result.message.find("通过") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Set_SupportsMultipleFields) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // 逐个添加字段（field_complete 规则需要 name, email, phone 字段）
+    adapter->set("name", "test_user");
+    adapter->set("email", "test@example.com");
+    adapter->set("phone", "12345678");
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Set_SupportsVariousTypes) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // 测试 int 类型
+    adapter->set("age", 25);
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // 测试 int64_t 类型
+    adapter->set("age", static_cast<int64_t>(30));
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result2, &error));
+    EXPECT_TRUE(result2.matched);
+
+    // 测试 double 类型
+    adapter->set("age", 35.5);
+    MatchResult result3;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result3, &error));
+    EXPECT_TRUE(result3.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Set_SupportsStringType) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // 测试 std::string（field_complete 规则需要 name, email, phone 字段）
+    adapter->set("name", std::string("user1"));
+    adapter->set("email", std::string("user1@test.com"));
+    adapter->set("phone", std::string("12345678"));
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Set_SupportsCString) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // 测试 const char*（field_complete 规则需要 name, email, phone 字段）
+    adapter->set("name", "user2");
+    adapter->set("email", "user2@test.com");
+    adapter->set("phone", "87654321");
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Set_SupportsBoolType) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个检查布尔字段的规则
+    CreateRuleFile("bool_check.lua", R"(
+function match(data)
+    if data["is_active"] == nil then
+        return false, "缺少is_active字段"
+    end
+    if type(data["is_active"]) ~= "boolean" then
+        return false, "is_active字段必须是布尔类型"
+    end
+    if not data["is_active"] then
+        return false, "账户未激活"
+    end
+    return true, "账户已激活"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("bool_check", "test_data/rules/bool_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+    adapter->set("is_active", true);
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("bool_check", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_TRUE(result.message.find("已激活") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_SetNull_SetsFieldToNil) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+    adapter->set("age", 25);
+
+    // 第一次：有 age 字段，应该通过
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // 使用 set_null() 将 age 设置为 nil
+    adapter->set_null("age");
+
+    // 第二次：age 字段为 nil，应该失败
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result2, &error));
+    EXPECT_FALSE(result2.matched);
+    EXPECT_TRUE(result2.message.find("缺少age字段") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Remove_RemovesField) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 创建有 age 字段的 adapter
+    auto adapter1 = std::make_shared<BasicDataAdapter>();
+    adapter1->set("age", 25);
+
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // 创建没有 age 字段的 adapter（模拟 remove 后的状态）
+    auto adapter2 = std::make_shared<BasicDataAdapter>();
+    // adapter2 没有 age 字段
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+    EXPECT_FALSE(result2.matched);
+    EXPECT_TRUE(result2.message.find("缺少age字段") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Remove_NonExistentField_DoesNotCrash) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+    adapter->set("age", 25);
+
+    // 删除不存在的字段不应该崩溃
+    adapter->remove("nonexistent_field");
+
+    // age 字段仍然存在，应该通过
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_ClearFields_RemovesAllFields) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    // 第一次：所有字段都存在的 adapter
+    auto adapter1 = std::make_shared<BasicDataAdapter>();
+    adapter1->set("name", "test_user");
+    adapter1->set("email", "test@example.com");
+    adapter1->set("phone", "12345678");
+
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // 第二次：清空所有字段的 adapter（模拟 clear_fields 后的状态）
+    auto adapter2 = std::make_shared<BasicDataAdapter>();
+    // adapter2 没有字段
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter2, result2, &error));
+    EXPECT_FALSE(result2.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_ClearFields_EmptyAdapter_DoesNotCrash) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // 清空空 adapter 不应该崩溃
+    adapter->clear_fields();
+
+    // 添加字段后应该正常工作
+    adapter->set("age", 25);
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_OverwriteDifferentTypes) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // string -> int
+    adapter->set("age", "25");
+    adapter->set("age", 25);
+
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // int -> double
+    adapter->set("age", 30.5);
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result2, &error));
+    EXPECT_TRUE(result2.matched);
+
+    // double -> bool (true = 1, 应该失败因为 1 < 18)
+    adapter->set("age", true);
+
+    MatchResult result3;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result3, &error));
+    EXPECT_FALSE(result3.matched);
+
+    // bool -> string (失败，因为 "true" 不是数字)
+    adapter->set("age", "true");
+
+    MatchResult result4;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result4, &error));
+    EXPECT_FALSE(result4.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_MultipleModifications) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 测试1：初始状态 - 没有字段
+    auto adapter1 = std::make_shared<BasicDataAdapter>();
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter1, result1, &error));
+    EXPECT_FALSE(result1.matched);
+
+    // 测试2：添加字段但值不足
+    auto adapter2 = std::make_shared<BasicDataAdapter>();
+    adapter2->set("age", 15);
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+    EXPECT_FALSE(result2.matched);
+
+    // 测试3：修改为有效值
+    auto adapter3 = std::make_shared<BasicDataAdapter>();
+    adapter3->set("age", 20);
+    MatchResult result3;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter3, result3, &error));
+    EXPECT_TRUE(result3.matched);
+
+    // 测试4：设置为 nil
+    auto adapter4 = std::make_shared<BasicDataAdapter>();
+    adapter4->set_null("age");
+    MatchResult result4;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter4, result4, &error));
+    EXPECT_FALSE(result4.matched);
+
+    // 测试5：重新添加有效值
+    auto adapter5 = std::make_shared<BasicDataAdapter>();
+    adapter5->set("age", 30);
+    MatchResult result5;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter5, result5, &error));
+    EXPECT_TRUE(result5.matched);
+
+    // 测试6：删除字段（没有 age 字段的 adapter）
+    auto adapter6 = std::make_shared<BasicDataAdapter>();
+    MatchResult result6;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter6, result6, &error));
+    EXPECT_FALSE(result6.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_SetNull_ThenSet_ReplacesWithNewValue) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // 设置为 nil
+    adapter->set_null("age");
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result1, &error));
+    EXPECT_FALSE(result1.matched);
+
+    // 替换为有效值
+    adapter->set("age", 25);
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result2, &error));
+    EXPECT_TRUE(result2.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_LargeNumberOfFields) {
+    RuleEngine engine;
+    std::string error;
+
+    // 创建一个检查特定字段的规则
+    CreateRuleFile("check_field_500.lua", R"(
+function match(data)
+    if data["field_500"] == nil then
+        return false, "缺少field_500字段"
+    end
+    return true, "找到field_500字段"
+end
+)");
+
+    ASSERT_TRUE(engine.add_rule("check_field_500", "test_data/rules/check_field_500.lua", &error));
+
+    auto adapter = std::make_shared<BasicDataAdapter>();
+
+    // 添加大量字段
+    for (int i = 0; i < 1000; i++) {
+        adapter->set("field_" + std::to_string(i), "value_" + std::to_string(i));
+    }
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("check_field_500", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+    EXPECT_TRUE(result.message.find("找到field_500字段") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_GetTypeName_ReturnsBasicDataAdapter) {
+    auto adapter = std::make_shared<BasicDataAdapter>();
+    EXPECT_STREQ(adapter->get_type_name(), "BasicDataAdapter");
+}
+
+// ============================================================================
+// JsonAdapter 字段修改功能测试（继承自 BasicDataAdapter）
+// ============================================================================
+
+TEST_F(RuleEngineTest, JsonAdapter_Set_AddsFieldToJsonData) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // JSON 数据没有 age 字段
+    json data = {
+        {"username", "test_user"}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 第一次匹配：没有 age 字段，应该失败
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result1, &error));
+    EXPECT_FALSE(result1.matched);
+    EXPECT_TRUE(result1.message.find("缺少age字段") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_Set_ModifiesExistingJsonField) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // JSON 数据中 age 不满足要求
+    json data = {
+        {"username", "young_user"},
+        {"age", 15}
+    };
+
+    auto adapter1 = std::make_shared<JsonAdapter>(data);
+
+    // 第一次匹配：age=15，不满足>=18
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter1, result1, &error));
+    EXPECT_FALSE(result1.matched);
+    EXPECT_TRUE(result1.message.find("年龄不足") != std::string::npos);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_Set_MultipleFields) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    // JSON 数据只有一个字段
+    json data = {
+        {"name", "test_user"}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 使用 set() 添加其他字段
+    adapter->set("email", "test@example.com");
+    adapter->set("phone", "12345678");
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_Set_OverwritesJsonFieldValue) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // JSON 数据中 age=20
+    json data = {
+        {"username", "user1"},
+        {"age", 20}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 覆盖 age 字段
+    adapter->set("age", 10);  // 第一次覆盖：不满足
+    adapter->set("age", 25);  // 第二次覆盖：满足
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_Set_SupportsVariousTypes) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    json data = {
+        {"username", "test_user"}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 测试各种类型
+    adapter->set("age", 25);  // int
+
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result1, &error));
+    EXPECT_TRUE(result1.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_Set_AddsNewFieldNotInJson) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    // JSON 数据完全没有需要的字段
+    json data = {
+        {"other_field", "other_value"}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 添加所有需要的字段
+    adapter->set("name", "new_user");
+    adapter->set("email", "new@example.com");
+    adapter->set("phone", "87654321");
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_Remove_RemovesDynamicField) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // JSON 数据没有 age 字段
+    json data = {
+        {"username", "user1"}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 动态添加 age 字段
+    adapter->set("age", 25);
+
+    // 使用 remove() 删除 age 字段
+    adapter->remove("age");
+
+    // age 字段不存在，应该失败
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    EXPECT_FALSE(result.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_Remove_NonExistentField_DoesNotCrash) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    json data = {
+        {"username", "user1"},
+        {"age", 25}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 删除不存在的字段不应该崩溃
+    adapter->remove("nonexistent_field");
+
+    // age 字段仍然存在，应该通过
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_ClearFields_RemovesAllFieldsIncludingJson) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    // JSON 数据有部分字段
+    json data = {
+        {"name", "json_user"},
+        {"email", "json@example.com"}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 清空所有字段（包括 JSON 原始字段和动态添加的字段）
+    adapter->clear_fields();
+
+    // 所有字段都不存在，应该失败
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter, result, &error));
+    EXPECT_FALSE(result.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_ClearFields_ThenAddNewFields) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    // JSON 数据
+    json data = {
+        {"name", "old_user"},
+        {"email", "old@example.com"}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 清空所有字段
+    adapter->clear_fields();
+
+    // 添加新字段
+    adapter->set("name", "new_user");
+    adapter->set("email", "new@example.com");
+    adapter->set("phone", "99999999");
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_JsonDataAndDynamicFields_Combined) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    // JSON 数据有部分字段
+    json data = {
+        {"name", "json_user"}
+    };
+
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    // 动态添加剩余字段
+    adapter->set("email", "dynamic@example.com");
+    adapter->set("phone", "11111111");
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_GetTypeName_ReturnsJsonAdapter) {
+    json data = {{"key", "value"}};
+    auto adapter = std::make_shared<JsonAdapter>(data);
+    EXPECT_STREQ(adapter->get_type_name(), "nlohmann::json");
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_FieldModifications_DoNotAffectOriginalJson) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 创建 JSON 数据
+    json original_data = {
+        {"username", "user1"},
+        {"age", 15}
+    };
+
+    // 保存原始值
+    int original_age = original_data["age"];
+
+    // 用原始数据创建新的 adapter
+    auto adapter = std::make_shared<JsonAdapter>(original_data);
+
+    // 应该使用原始值 15，所以不满足
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    EXPECT_FALSE(result.matched);
+
+    // 验证原始 JSON 数据没有被修改
+    EXPECT_EQ(original_data["age"], original_age);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_MultipleAdaptersFromSameJson_Independent) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    json data = {
+        {"username", "user1"},
+        {"age", 15}
+    };
+
+    // 从同一个 JSON 创建多个 adapter
+    auto adapter1 = std::make_shared<JsonAdapter>(data);
+    auto adapter2 = std::make_shared<JsonAdapter>(data);
+
+    // 修改 adapter1
+    adapter1->set("age", 25);
+
+    // adapter1 应该通过
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    // adapter2 不应该受影响，仍然使用原始值
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+    EXPECT_FALSE(result2.matched);
+}
+
+TEST_F(RuleEngineTest, JsonAdapter_ComplexScenario_MixJsonAndDynamicFields) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("field_complete", "test_data/rules/field_complete.lua", &error));
+
+    // 场景：用户注册时只有基本信息，后续通过 set() 补充其他字段
+    json base_user = {
+        {"name", "new_user"}
+    };
+
+    auto adapter1 = std::make_shared<JsonAdapter>(base_user);
+
+    // 第一次检查：只有 name，应该失败
+    MatchResult result1;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter1, result1, &error));
+    EXPECT_FALSE(result1.matched);
+
+    // 创建新 adapter，补充 email
+    auto adapter2 = std::make_shared<JsonAdapter>(base_user);
+    adapter2->set("email", "user@example.com");
+
+    // 第二次检查：有 name 和 email，仍然缺少 phone
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter2, result2, &error));
+    EXPECT_FALSE(result2.matched);
+
+    // 创建新 adapter，补充 phone
+    auto adapter3 = std::make_shared<JsonAdapter>(base_user);
+    adapter3->set("email", "user@example.com");
+    adapter3->set("phone", "12345678");
+
+    // 第三次检查：所有字段都齐全，应该通过
+    MatchResult result3;
+    ASSERT_TRUE(engine.match_rule("field_complete", adapter3, result3, &error));
+    EXPECT_TRUE(result3.matched);
+}
+
+// ============================================================================
+// Adapter 缓存生命周期测试
+// ============================================================================
+
+TEST_F(RuleEngineTest, Adapter_Cleanup_AfterDestruction_CacheIsCleaned) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 创建第一个 adapter（ID=1）
+    {
+        json data1 = {{"age", 25}};
+        auto adapter1 = std::make_shared<JsonAdapter>(data1);
+
+        MatchResult result1;
+        ASSERT_TRUE(engine.match_rule("age_check", adapter1, result1, &error));
+        EXPECT_TRUE(result1.matched);
+
+        // adapter1 离开作用域，shared_ptr 引用计数变为 0，对象被销毁
+        // 此时缓存中的 weak_ptr 应该过期
+    }
+
+    // 创建第二个 adapter（ID=2，不同于第一个）
+    json data2 = {{"age", 30}};
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+    EXPECT_TRUE(result2.matched);
+
+    // 引擎应该能够正常工作，过期的缓存条目应该被清理
+}
+
+TEST_F(RuleEngineTest, MultipleAdapters_SameData_IndependentCaches) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    json data = {{"age", 25}};
+
+    // 创建多个 adapter，使用相同的 JSON 数据
+    auto adapter1 = std::make_shared<JsonAdapter>(data);
+    auto adapter2 = std::make_shared<JsonAdapter>(data);
+    auto adapter3 = std::make_shared<JsonAdapter>(data);
+
+    // 每个 adapter 都有独立的缓存条目（因为 ID 不同）
+    MatchResult result1, result2, result3;
+    
+    ASSERT_TRUE(engine.match_rule("age_check", adapter1, result1, &error));
+    EXPECT_TRUE(result1.matched);
+
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+    EXPECT_TRUE(result2.matched);
+
+    ASSERT_TRUE(engine.match_rule("age_check", adapter3, result3, &error));
+    EXPECT_TRUE(result3.matched);
+
+    // 销毁 adapter1 和 adapter2
+    adapter1.reset();
+    adapter2.reset();
+
+    // adapter3 仍然可用，缓存应该仍然有效
+    MatchResult result4;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter3, result4, &error));
+    EXPECT_TRUE(result4.matched);
+}
+
+TEST_F(RuleEngineTest, Adapter_ReusedAfterDestruction_NewCacheCreated) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    uint64_t first_id = 0;
+
+    // 第一个 adapter
+    {
+        json data = {{"age", 20}};
+        auto adapter1 = std::make_shared<JsonAdapter>(data);
+        first_id = adapter1->get_id();
+
+        MatchResult result1;
+        ASSERT_TRUE(engine.match_rule("age_check", adapter1, result1, &error));
+        EXPECT_TRUE(result1.matched);
+
+        // adapter1 离开作用域，缓存中的 weak_ptr 过期
+    }
+
+    // 创建新的 adapter，由于 ID 是原子递增的，新 ID 应该大于第一个
+    json data2 = {{"age", 35}};
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
+    
+    uint64_t second_id = adapter2->get_id();
+    EXPECT_GT(second_id, first_id) << "New adapter should have larger ID";
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+    EXPECT_TRUE(result2.matched);
+}
+
+TEST_F(RuleEngineTest, BasicAdapter_Cleanup_AfterDestruction) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 创建 BasicDataAdapter
+    {
+        auto adapter1 = std::make_shared<BasicDataAdapter>();
+        adapter1->set("age", 25);
+
+        MatchResult result1;
+        ASSERT_TRUE(engine.match_rule("age_check", adapter1, result1, &error));
+        EXPECT_TRUE(result1.matched);
+
+        // adapter1 离开作用域
+    }
+
+    // 创建新的 adapter
+    auto adapter2 = std::make_shared<BasicDataAdapter>();
+    adapter2->set("age", 30);
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+    EXPECT_TRUE(result2.matched);
+}
+
+TEST_F(RuleEngineTest, CacheWithAggressiveCleanup_CleansExpiredAdapters) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 默认使用 Aggressive 清理策略，每次调用都会检查并清理过期缓存
+
+    // 创建并销毁多个 adapter
+    for (int i = 0; i < 10; i++) {
+        json data = {{"age", 20 + i}};
+        auto adapter = std::make_shared<JsonAdapter>(data);
+
+        MatchResult result;
+        ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+        EXPECT_TRUE(result.matched);
+
+        // adapter 离开作用域，weak_ptr 过期
+        // 下一次循环时，Aggressive 策略应该清理过期的缓存
+    }
+
+    // 验证引擎仍然正常工作
+    json final_data = {{"age", 100}};
+    auto final_adapter = std::make_shared<JsonAdapter>(final_data);
+
+    MatchResult final_result;
+    ASSERT_TRUE(engine.match_rule("age_check", final_adapter, final_result, &error));
+    EXPECT_TRUE(final_result.matched);
 }

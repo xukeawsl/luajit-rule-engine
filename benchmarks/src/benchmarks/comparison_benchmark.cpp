@@ -205,7 +205,7 @@ static void BM_Comp_JsonAdapter_Overhead(benchmark::State& state) {
     engine.add_rule("simple_age_check", "../benchmarks/src/rules/simple_age_check.lua");
 
     for (auto _ : state) {
-        ljre::JsonAdapter adapter(data);
+        auto adapter = std::make_shared<ljre::JsonAdapter>(data);
         ljre::MatchResult result;
         engine.match_rule("simple_age_check", adapter, result);
         benchmark::DoNotOptimize(result);
@@ -245,7 +245,8 @@ static void BM_Comp_Batch_MatchAll_100Rules(benchmark::State& state) {
 
     for (auto _ : state) {
         std::map<std::string, ljre::MatchResult> results;
-        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_all_rules(adapter, results);
         benchmark::DoNotOptimize(results);
     }
 }
@@ -268,7 +269,8 @@ static void BM_Comp_Individual_Match_100Rules(benchmark::State& state) {
     for (auto _ : state) {
         std::vector<ljre::MatchResult> results(100);
         for (int i = 0; i < 100; ++i) {
-            engine.match_rule(rule_names[i], ljre::JsonAdapter(data), results[i]);
+            auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_rule(rule_names[i], adapter, results[i]);
         }
         benchmark::DoNotOptimize(results);
     }
@@ -290,7 +292,8 @@ static void BM_Comp_Batch_MatchAll_500Rules(benchmark::State& state) {
 
     for (auto _ : state) {
         std::map<std::string, ljre::MatchResult> results;
-        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_all_rules(adapter, results);
         benchmark::DoNotOptimize(results);
     }
 }
@@ -313,7 +316,8 @@ static void BM_Comp_Individual_Match_500Rules(benchmark::State& state) {
     for (auto _ : state) {
         std::vector<ljre::MatchResult> results(500);
         for (int i = 0; i < 500; ++i) {
-            engine.match_rule(rule_names[i], ljre::JsonAdapter(data), results[i]);
+            auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_rule(rule_names[i], adapter, results[i]);
         }
         benchmark::DoNotOptimize(results);
     }
@@ -335,7 +339,8 @@ static void BM_Comp_Batch_MatchAll_1000Rules(benchmark::State& state) {
 
     for (auto _ : state) {
         std::map<std::string, ljre::MatchResult> results;
-        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_all_rules(adapter, results);
         benchmark::DoNotOptimize(results);
     }
 }
@@ -358,7 +363,8 @@ static void BM_Comp_Individual_Match_1000Rules(benchmark::State& state) {
     for (auto _ : state) {
         std::vector<ljre::MatchResult> results(1000);
         for (int i = 0; i < 1000; ++i) {
-            engine.match_rule(rule_names[i], ljre::JsonAdapter(data), results[i]);
+            auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_rule(rule_names[i], adapter, results[i]);
         }
         benchmark::DoNotOptimize(results);
     }

@@ -13,6 +13,12 @@
 
 namespace ljre {
 
+// 缓存清理策略
+enum class CacheCleanupPolicy {
+    Never,      // 从不自动清理（仅在 weak_ptr 过期或引擎析构时清理）
+    Aggressive  // 积极清理（每次 match_rule 调用都检查）- 默认策略
+};
+
 // 规则匹配结果
 struct MatchResult {
     bool matched;           // 是否匹配成功
@@ -57,20 +63,22 @@ public:
 
     // 检查指定规则是否匹配
     // data_adapter 用于将业务数据转换为Lua table
-    bool match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
-                    MatchResult& result, std::string* error_msg = nullptr) const;
+    bool match_rule(const std::string& rule_name,
+                    std::shared_ptr<DataAdapter> data_adapter,
+                    MatchResult& result,
+                    std::string* error_msg = nullptr) const;
 
     // 检查多个规则是否匹配
     // results 存储 {规则名: 匹配结果} 的映射，按规则名字母顺序排序
     // 返回值: true 表示至少有一个规则匹配成功，false 表示所有规则都失败
     // 注意：即使某个规则调用失败，也会将其结果添加到 results 中
     bool match_rule(const std::vector<std::string>& rule_names,
-                    const DataAdapter& data_adapter,
+                    std::shared_ptr<DataAdapter> data_adapter,
                     std::map<std::string, MatchResult>& results,
                     std::string* error_msg = nullptr) const;
 
     // 检查所有规则是否匹配
-    bool match_all_rules(const DataAdapter& data_adapter,
+    bool match_all_rules(std::shared_ptr<DataAdapter> data_adapter,
                          std::map<std::string, MatchResult>& results,
                          std::string* error_msg = nullptr) const;
 
@@ -82,6 +90,16 @@ public:
 
     // 获取规则数量
     size_t get_rule_count() const { return _rules.size(); }
+
+    // 设置缓存清理策略
+    void set_cache_cleanup_policy(CacheCleanupPolicy policy) {
+        _cleanup_policy = policy;
+    }
+
+    // 获取当前缓存清理策略
+    CacheCleanupPolicy get_cache_cleanup_policy() const {
+        return _cleanup_policy;
+    }
 
     // 清空所有规则
     void clear_rules();
@@ -295,13 +313,28 @@ private:
     LuaState _lua_state;
     std::unordered_map<std::string, Rule> _rules;
     mutable EngineMetadata _metadata;
+    CacheCleanupPolicy _cleanup_policy;
+
+    // === 适配器缓存机制 ===
+
+    // 缓存条目
+    struct AdapterCacheEntry {
+        int registry_ref;                    // Lua Registry 引用
+        std::weak_ptr<DataAdapter> weak_ptr; // 用于检查是否过期
+    };
+
+    // 适配器缓存（用 ID 作为 key）
+    mutable std::unordered_map<uint64_t, AdapterCacheEntry> _adapter_cache;
+
+    // 清理过期的缓存
+    void cleanup_expired_cache() const;
 
     // 内部方法：加载规则文件
     bool load_rule_file(const std::string& file_path, std::string* error_msg);
 
     // 内部方法：调用规则匹配函数
     bool call_match_function(const std::string& rule_name,
-                             const DataAdapter& data_adapter,
+                             std::shared_ptr<DataAdapter> data_adapter,
                              MatchResult& result,
                              std::string* error_msg) const;
 

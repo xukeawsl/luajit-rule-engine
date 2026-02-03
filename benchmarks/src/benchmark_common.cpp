@@ -27,7 +27,7 @@ bool RuleEngineWrapper::initialize(RuleComplexity complexity, const std::string&
 }
 
 bool RuleEngineWrapper::match_rule(const nlohmann::json& data, bool& matched, std::string& message) {
-    ljre::JsonAdapter adapter(data);
+    auto adapter = std::make_shared<ljre::JsonAdapter>(data);
     ljre::MatchResult result;
 
     std::string error_msg;

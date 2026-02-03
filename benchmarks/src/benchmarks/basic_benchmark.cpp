@@ -297,7 +297,8 @@ static void BM_LuaJIT_MatchAllRules(benchmark::State& state) {
 
     for (auto _ : state) {
         std::map<std::string, ljre::MatchResult> results;
-        engine.match_all_rules(ljre::JsonAdapter(data), results);
+        auto adapter = std::make_shared<ljre::JsonAdapter>(data);
+    engine.match_all_rules(adapter, results);
         benchmark::DoNotOptimize(results);
     }
 

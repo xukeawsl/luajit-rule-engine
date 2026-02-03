@@ -11,6 +11,7 @@ bool JsonAdapter::push_to_lua(lua_State* L, std::string* error_msg) const {
         return false;
     }
 
+    // 转换 JSON 数据（不执行命令，命令由引擎侧调用 execute_commands）
     return push_json_value(L, _data, error_msg, 0);
 }
 

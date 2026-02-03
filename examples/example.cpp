@@ -116,7 +116,7 @@ int main() {
     std::cout << "测试数据1 (有效用户):" << std::endl;
     std::cout << valid_user.dump(2) << std::endl;
 
-    JsonAdapter adapter1(valid_user);
+    auto adapter1 = std::make_shared<JsonAdapter>(valid_user);
 
     // 匹配单个规则
     MatchResult result;
@@ -154,7 +154,7 @@ int main() {
     std::cout << "测试数据2 (年龄不足):" << std::endl;
     std::cout << invalid_user1.dump(2) << std::endl;
 
-    JsonAdapter adapter2(invalid_user1);
+    auto adapter2 = std::make_shared<JsonAdapter>(invalid_user1);
     std::map<std::string, MatchResult> results2;
 
     if (engine.match_all_rules(adapter2, results2)) {
@@ -182,7 +182,7 @@ int main() {
     std::cout << "测试数据3 (缺少字段):" << std::endl;
     std::cout << invalid_user2.dump(2) << std::endl;
 
-    JsonAdapter adapter3(invalid_user2);
+    auto adapter3 = std::make_shared<JsonAdapter>(invalid_user2);
     std::map<std::string, MatchResult> results3;
 
     if (engine.match_all_rules(adapter3, results3)) {
@@ -236,7 +236,7 @@ int main() {
     std::cout << "测试函数注册功能:" << std::endl;
     std::cout << test_data.dump(2) << std::endl;
 
-    JsonAdapter adapter4(test_data);
+    auto adapter4 = std::make_shared<JsonAdapter>(test_data);
     MatchResult result4;
 
     if (engine.match_rule("function_test", adapter4, result4, &error_msg)) {
@@ -265,6 +265,111 @@ int main() {
         std::cout << func << " ";
     }
     std::cout << std::endl;
+
+    std::cout << "\n" << std::string(50, '-') << "\n" << std::endl;
+
+    // 测试 JsonAdapter 字段修改功能
+    std::cout << "=== JsonAdapter 字段修改测试 ===" << std::endl;
+
+    // 基础 JSON 数据
+    json base_data = {
+        {"username", "test_user"},
+        {"age", 15}
+    };
+
+    std::cout << "原始数据 (年龄15，不满足>=18):" << std::endl;
+    std::cout << base_data.dump(2) << std::endl;
+
+    // 创建 JsonAdapter 并动态添加字段
+    auto adapter5 = std::make_shared<JsonAdapter>(base_data);
+
+    // 添加新字段
+    adapter5->set("email", "dynamic@example.com");
+    adapter5->set("phone", "13900000000");
+    adapter5->set("score", 95.5);
+    adapter5->set("is_vip", true);
+    adapter5->set("user_id", 10086);
+
+    std::cout << "\n使用 set() 方法添加字段后:" << std::endl;
+    std::cout << "  添加: email, phone, score, is_vip, user_id" << std::endl;
+
+    std::map<std::string, MatchResult> results5;
+    if (engine.match_all_rules(adapter5, results5, &error_msg)) {
+        std::cout << "✓ 动态添加字段后规则匹配成功" << std::endl;
+    } else {
+        std::cout << "✗ 动态添加字段后规则匹配失败: " << error_msg << std::endl;
+    }
+
+    std::cout << "\n--- 字段修改测试 ---" << std::endl;
+
+    // 先测试未修改前（年龄15，不满足>=18）
+    json young_user = {
+        {"username", "young_user"},
+        {"age", 15}
+    };
+
+    auto adapter6a = std::make_shared<JsonAdapter>(young_user);
+    MatchResult result6a;
+    std::cout << "未修改前: age=15 (不满足>=18)" << std::endl;
+    if (engine.match_rule("age_check", adapter6a, result6a, &error_msg)) {
+        std::cout << "  结果: " << (result6a.matched ? "✓ " : "✗ ") << result6a.message << std::endl;
+    }
+
+    // 通过 set() 修改年龄
+    auto adapter6b = std::make_shared<JsonAdapter>(young_user);
+    adapter6b->set("age", 25);  // 修改年龄为25
+    adapter6b->set("username", "updated_user");  // 修改用户名
+
+    std::cout << "\n使用 set() 修改后: age=15->25, username='young_user'->'updated_user'" << std::endl;
+
+    MatchResult result6b;
+    if (engine.match_rule("age_check", adapter6b, result6b, &error_msg)) {
+        std::cout << "  结果: " << (result6b.matched ? "✓ " : "✗ ") << result6b.message << std::endl;
+    }
+
+    std::cout << "\n--- set_null() 和 remove() 测试 ---" << std::endl;
+
+    auto adapter7 = std::make_shared<JsonAdapter>(base_data);
+
+    // 先添加一些字段
+    adapter7->set("email", "test@example.com");
+    adapter7->set("phone", "13800000000");
+
+    std::cout << "添加字段: email, phone" << std::endl;
+
+    // 使用 set_null() 将字段设置为 null
+    adapter7->set_null("phone");
+    std::cout << "使用 set_null() 将 phone 设置为 null" << std::endl;
+
+    // 使用 remove() 删除字段
+    adapter7->remove("email");
+    std::cout << "使用 remove() 删除 email 字段" << std::endl;
+
+    // 测试 clear_fields()
+    auto adapter8 = std::make_shared<JsonAdapter>(base_data);
+    adapter8->set("temp1", "value1");
+    adapter8->set("temp2", "value2");
+
+    std::cout << "\n使用 clear_fields() 前有 " << engine.get_rule_count() << " 条规则可用" << std::endl;
+    adapter8->clear_fields();
+    std::cout << "已调用 clear_fields() 清空所有动态字段" << std::endl;
+
+    std::cout << "\n--- 字段覆盖测试 ---" << std::endl;
+
+    // 演示多次设置同一字段，只保留最新值
+    auto adapter9 = std::make_shared<JsonAdapter>(base_data);
+    adapter9->set("age", 10);   // 第一次：10岁
+    adapter9->set("age", 16);   // 第二次：16岁（不满足）
+    adapter9->set("age", 22);   // 第三次：22岁（满足）
+
+    std::cout << "多次设置 age: 10 -> 16 -> 22，最终值应为 22" << std::endl;
+
+    MatchResult result9;
+    if (engine.match_rule("age_check", adapter9, result9, &error_msg)) {
+        std::cout << "  结果: " << (result9.matched ? "✓ " : "✗ ") << result9.message << std::endl;
+    }
+
+    std::cout << "\n=== 所有测试完成 ===" << std::endl;
 
     return 0;
 }

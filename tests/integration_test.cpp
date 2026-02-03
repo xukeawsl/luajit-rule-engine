@@ -164,7 +164,7 @@ TEST_F(IntegrationTest, UserRegistration_FullScenario) {
         {"phone", "13800138000"}  // 手机号需要是字符串
     };
 
-    JsonAdapter adapter1(valid_user);
+    auto adapter1 = std::make_shared<JsonAdapter>(valid_user);
     std::map<std::string, MatchResult> results1;
 
     bool all_passed = engine.match_all_rules(adapter1, results1, &error);
@@ -184,7 +184,7 @@ TEST_F(IntegrationTest, UserRegistration_FullScenario) {
         {"phone", "13900139000"}
     };
 
-    JsonAdapter adapter2(underage_user);
+    auto adapter2 = std::make_shared<JsonAdapter>(underage_user);
     std::map<std::string, MatchResult> results2;
 
     all_passed = engine.match_all_rules(adapter2, results2, &error);
@@ -212,7 +212,7 @@ TEST_F(IntegrationTest, UserRegistration_PartialData) {
         // 缺少 email 和 phone
     };
 
-    JsonAdapter adapter(incomplete_user);
+    auto adapter = std::make_shared<JsonAdapter>(incomplete_user);
     std::map<std::string, MatchResult> results;
 
     engine.match_all_rules(adapter, results, &error);
@@ -239,7 +239,7 @@ TEST_F(IntegrationTest, UserRegistration_InvalidEmailFormat) {
         {"phone", "13700137000"}
     };
 
-    JsonAdapter adapter(invalid_email_user);
+    auto adapter = std::make_shared<JsonAdapter>(invalid_email_user);
     std::map<std::string, MatchResult> results;
 
     engine.match_all_rules(adapter, results, &error);
@@ -262,7 +262,7 @@ TEST_F(IntegrationTest, UserRegistration_InvalidPhoneFormat) {
         {"phone", "12345"}  // 格式错误
     };
 
-    JsonAdapter adapter(invalid_phone_user);
+    auto adapter = std::make_shared<JsonAdapter>(invalid_phone_user);
     std::map<std::string, MatchResult> results;
 
     engine.match_all_rules(adapter, results, &error);
@@ -290,14 +290,14 @@ end
 
     // 测试原始规则
     json data1 = {{"value", 15}};
-    JsonAdapter adapter1(data1);
+    auto adapter1 = std::make_shared<JsonAdapter>(data1);
     MatchResult result1;
 
     ASSERT_TRUE(engine.match_rule("dynamic", adapter1, result1, &error));
     EXPECT_TRUE(result1.matched);
 
     json data2 = {{"value", 5}};
-    JsonAdapter adapter2(data2);
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
     MatchResult result2;
 
     ASSERT_TRUE(engine.match_rule("dynamic", adapter2, result2, &error));
@@ -315,14 +315,14 @@ end
 
     // 测试修改后的规则
     json data3 = {{"value", 50}};
-    JsonAdapter adapter3(data3);
+    auto adapter3 = std::make_shared<JsonAdapter>(data3);
     MatchResult result3;
 
     ASSERT_TRUE(engine.match_rule("dynamic", adapter3, result3, &error));
     EXPECT_FALSE(result3.matched) << "50应该不大于100";
 
     json data4 = {{"value", 150}};
-    JsonAdapter adapter4(data4);
+    auto adapter4 = std::make_shared<JsonAdapter>(data4);
     MatchResult result4;
 
     ASSERT_TRUE(engine.match_rule("dynamic", adapter4, result4, &error));
@@ -358,7 +358,7 @@ end
 
     // 测试两个规则
     json data = {{"field1", "value1"}, {"field2", "value2"}};
-    JsonAdapter adapter(data);
+    auto adapter = std::make_shared<JsonAdapter>(data);
     std::map<std::string, MatchResult> results;
 
     engine.match_all_rules(adapter, results, &error);
@@ -407,14 +407,14 @@ end
 
     // 测试不同环境的数据
     json test_data = {{"env", "test"}};
-    JsonAdapter test_adapter(test_data);
+    auto test_adapter = std::make_shared<JsonAdapter>(test_data);
     MatchResult test_result;
 
     ASSERT_TRUE(test_engine.match_rule("env_check", test_adapter, test_result, &error));
     EXPECT_TRUE(test_result.matched) << "测试引擎应该接受测试环境数据";
 
     json prod_data = {{"env", "production"}};
-    JsonAdapter prod_adapter(prod_data);
+    auto prod_adapter = std::make_shared<JsonAdapter>(prod_data);
     MatchResult prod_result;
 
     ASSERT_TRUE(prod_engine.match_rule("env_check", prod_adapter, prod_result, &error));
@@ -466,7 +466,7 @@ end
         }}
     };
 
-    JsonAdapter adapter1(valid_address);
+    auto adapter1 = std::make_shared<JsonAdapter>(valid_address);
     MatchResult result1;
 
     ASSERT_TRUE(engine.match_rule("address_check", adapter1, result1, &error));
@@ -481,7 +481,7 @@ end
         }}
     };
 
-    JsonAdapter adapter2(invalid_address);
+    auto adapter2 = std::make_shared<JsonAdapter>(invalid_address);
     MatchResult result2;
 
     ASSERT_TRUE(engine.match_rule("address_check", adapter2, result2, &error));
@@ -510,7 +510,7 @@ end
 
     // 测试空对象
     json empty_data = json::object();
-    JsonAdapter adapter1(empty_data);
+    auto adapter1 = std::make_shared<JsonAdapter>(empty_data);
     MatchResult result1;
 
     ASSERT_TRUE(engine.match_rule("empty_check", adapter1, result1, &error));
@@ -518,7 +518,7 @@ end
 
     // 测试有数据的对象
     json non_empty_data = {{"key", "value"}};
-    JsonAdapter adapter2(non_empty_data);
+    auto adapter2 = std::make_shared<JsonAdapter>(non_empty_data);
     MatchResult result2;
 
     ASSERT_TRUE(engine.match_rule("empty_check", adapter2, result2, &error));
@@ -561,7 +561,7 @@ end
         large_data["items"].push_back({{"id", i}, {"name", "item" + std::to_string(i)}});
     }
 
-    JsonAdapter adapter(large_data);
+    auto adapter = std::make_shared<JsonAdapter>(large_data);
     MatchResult result;
 
     ASSERT_TRUE(engine.match_rule("items_check", adapter, result, &error));
@@ -632,7 +632,7 @@ end
         }}
     };
 
-    JsonAdapter adapter1(valid_order);
+    auto adapter1 = std::make_shared<JsonAdapter>(valid_order);
     std::map<std::string, MatchResult> results1;
 
     EXPECT_TRUE(engine.match_all_rules(adapter1, results1, &error));
@@ -643,7 +643,7 @@ end
         {"items", {{{"product_id", "P001"}, {"quantity", 1}}}}
     };
 
-    JsonAdapter adapter2(invalid_order1);
+    auto adapter2 = std::make_shared<JsonAdapter>(invalid_order1);
     std::map<std::string, MatchResult> results2;
 
     // 注意：修改后的语义是"只要有一个规则通过就返回 true"
@@ -658,7 +658,7 @@ end
         {"items", {{{"product_id", "P001"}, {"quantity", 0}}}}
     };
 
-    JsonAdapter adapter3(invalid_order2);
+    auto adapter3 = std::make_shared<JsonAdapter>(invalid_order2);
     std::map<std::string, MatchResult> results3;
 
     // 注意：修改后的语义是"只要有一个规则通过就返回 true"
@@ -722,7 +722,7 @@ end
     // 这意味着：根对象(深度0) -> level1(深度1) -> level2(深度2) -> level3(深度3) -> level4(深度4)
     // 当 max_depth=4 时，处理 level3 的值时（current_depth=3），检查 current_depth + 1 >= 4 为真
     // 所以 level3 的子元素 level4 会被截断为 nil
-    JsonAdapter adapter(nested_data, 4);
+    auto adapter = std::make_shared<JsonAdapter>(nested_data, 4);
 
     // 执行规则
     MatchResult result;
@@ -819,7 +819,7 @@ end
     };
 
     // 限制最大深度为4
-    JsonAdapter adapter(data, 4);
+    auto adapter = std::make_shared<JsonAdapter>(data, 4);
 
     // 执行规则
     MatchResult result;
@@ -892,7 +892,7 @@ end
 
     // 限制最大深度为2
     // level1 存在，level2 被截断为 nil
-    JsonAdapter adapter(nested_data, 2);
+    auto adapter = std::make_shared<JsonAdapter>(nested_data, 2);
 
     // 执行规则
     MatchResult result;
@@ -974,7 +974,7 @@ end
     // 限制最大深度为2
     // items 存在（深度1），items[1] 存在（深度2）
     // items[1][1] 被截断为 nil（深度3）
-    JsonAdapter adapter(array_data, 2);
+    auto adapter = std::make_shared<JsonAdapter>(array_data, 2);
 
     // 执行规则
     MatchResult result;

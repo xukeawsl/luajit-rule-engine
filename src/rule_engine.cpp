@@ -3,7 +3,8 @@
 
 namespace ljre {
 
-RuleEngine::RuleEngine() {
+RuleEngine::RuleEngine()
+    : _cleanup_policy(CacheCleanupPolicy::Aggressive) {
     // Lua状态会在构造函数中自动初始化
 }
 
@@ -174,19 +175,24 @@ bool RuleEngine::reload_rule(const std::string& rule_name, std::string* error_ms
     return add_rule(rule_name, file_path, error_msg);
 }
 
-bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& data_adapter,
+bool RuleEngine::match_rule(const std::string& rule_name,
+                            std::shared_ptr<DataAdapter> data_adapter,
                             MatchResult& result, std::string* error_msg) const {
     if (!_lua_state.is_valid()) {
+        result.matched = false;
+        result.message = "Lua state is invalid";
         if (error_msg) {
-            *error_msg = "Lua state is invalid";
+            *error_msg = result.message;
         }
         return false;
     }
 
     auto it = _rules.find(rule_name);
     if (it == _rules.end()) {
+        result.matched = false;
+        result.message = "Rule '" + rule_name + "' not found";
         if (error_msg) {
-            *error_msg = "Rule '" + rule_name + "' not found";
+            *error_msg = result.message;
         }
         return false;
     }
@@ -195,17 +201,18 @@ bool RuleEngine::match_rule(const std::string& rule_name, const DataAdapter& dat
 }
 
 bool RuleEngine::match_rule(const std::vector<std::string>& rule_names,
-                             const DataAdapter& data_adapter,
+                             std::shared_ptr<DataAdapter> data_adapter,
                              std::map<std::string, MatchResult>& results,
                              std::string* error_msg) const {
+    results.clear();
+
+    // 检查 Lua 状态是否有效
     if (!_lua_state.is_valid()) {
         if (error_msg) {
             *error_msg = "Lua state is invalid";
         }
         return false;
     }
-
-    results.clear();
 
     // 如果规则列表为空, 直接返回 true
     if (rule_names.empty()) {
@@ -215,104 +222,26 @@ bool RuleEngine::match_rule(const std::vector<std::string>& rule_names,
     // 规则去重
     std::set<std::string> unique_rules(rule_names.begin(), rule_names.end());
 
-    lua_State* L = _lua_state.get();
-    LuaStackGuard guard(L);  // 自动管理栈平衡
-
-    // 将数据压入栈顶
-    if (!data_adapter.push_to_lua(L, error_msg)) {
-        for (const auto& rule_name : unique_rules) {
-            MatchResult result;
-            result.matched = false;
-            if (error_msg) {
-                result.message = *error_msg;
-            }
-            results[rule_name] = result;
-        }
-        return false;
-    }
-
-    // 数据表现在在栈顶（-1 位置），记住它的位置
-    int data_table_index = lua_gettop(L);
-
+    // 循环调用单次匹配（自动利用缓存）
     bool any_matched = false;
     for (const auto& rule_name : unique_rules) {
-        if (has_rule(rule_name) == false) {
-            // 规则不存在，记录错误并继续
-            MatchResult result;
-            result.matched = false;
-            result.message = "Rule '" + rule_name + "' not found";
-            results[rule_name] = result;
-            continue;
-        }
-
-        // 获取规则函数
-        lua_getglobal(L, "_rule_functions");
-        if (!lua_istable(L, -1)) {
-            // 如果函数表不存在，记录错误并继续
-            MatchResult result;
-            result.matched = false;
-            result.message = "Rule function table not found";
-            results[rule_name] = result;
-            lua_pop(L, 1);  // 清理栈
-            continue;
-        }
-
-        lua_pushlstring(L, rule_name.data(), rule_name.size());
-        lua_rawget(L, -2);  // 获取 _rule_functions[rule_name]
-        lua_remove(L, -2);  // 移除 _rule_functions 表
-
-        if (!lua_isfunction(L, -1)) {
-            // 如果函数不存在，记录错误并继续
-            MatchResult result;
-            result.matched = false;
-            result.message = "Rule '" + rule_name + "' match function not found";
-            results[rule_name] = result;
-            lua_pop(L, 1);  // 清理栈
-            continue;
-        }
-
-        // 复制数据表作为参数（不重新转换）
-        lua_pushvalue(L, data_table_index);
-
-        // 调用 match 函数：1 个参数，2 个返回值
-        if (lua_pcall(L, 1, 2, 0) != LUA_OK) {
-            // 调用失败，记录错误并继续处理下一个规则
-            MatchResult result;
-            result.matched = false;
-            result.message = "Failed to call match: " + _lua_state.get_error_string();
-            results[rule_name] = result;
-            lua_pop(L, 2);  // 清理返回值
-            continue;
-        }
-
-        // 获取返回值
         MatchResult result;
-        if (!lua_isboolean(L, -2)) {
-            result.matched = false;
-            result.message = "First return value is not boolean";
-        } else {
-            result.matched = lua_toboolean(L, -2);
-
-            // lua_isstring 会对数字返回 true（因为数字可以转换为字符串）
-            // 所以需要使用 lua_type 来精确检查类型
-            if (lua_type(L, -1) == LUA_TSTRING) {
-                result.message = lua_tostring(L, -1);
+        if (match_rule(rule_name, data_adapter, result, error_msg)) {
+            // 调用成功
+            if (result.matched) {
+                any_matched = true;
             }
-            // 如果不是字符串，message 保持为空字符串
-        }
-
-        lua_pop(L, 2);  // 清理返回值
-        results[rule_name] = result;
-
-        if (result.matched) {
-            any_matched = true;
+            results[rule_name] = result;
+        } else {
+            // 调用失败
+            results[rule_name] = result;
         }
     }
 
     return any_matched;
 }
 
-bool RuleEngine::match_all_rules(const DataAdapter& data_adapter,
+bool RuleEngine::match_all_rules(std::shared_ptr<DataAdapter> data_adapter,
                                  std::map<std::string, MatchResult>& results,
                                  std::string* error_msg) const {
     std::vector<std::string> rule_names;
@@ -373,12 +302,67 @@ bool RuleEngine::load_rule_file(const std::string& file_path, std::string* error
 }
 
 bool RuleEngine::call_match_function(const std::string& rule_name,
-                                     const DataAdapter& data_adapter,
+                                     std::shared_ptr<DataAdapter> data_adapter,
                                      MatchResult& result,
                                      std::string* error_msg) const {
     lua_State* L = _lua_state.get();
     LuaStackGuard guard(L);  // 自动管理栈平衡
 
+    // === 1. 根据策略清理缓存 ===
+    if (_cleanup_policy == CacheCleanupPolicy::Aggressive) {
+        cleanup_expired_cache();  // 积极清理：每次调用都检查
+    }
+    // CacheCleanupPolicy::Never 不执行自动清理
+
+    // === 2. 获取适配器 ID 并检查缓存 ===
+    uint64_t adapter_id = data_adapter->get_id();
+    auto it = _adapter_cache.find(adapter_id);
+
+    if (it != _adapter_cache.end()) {
+        // 检查 weak_ptr 是否还有效
+        if (auto locked = it->second.weak_ptr.lock()) {
+            // 命中缓存：直接获取 table
+            lua_rawgeti(L, LUA_REGISTRYINDEX, it->second.registry_ref);
+        } else {
+            // weak_ptr 已过期，清理缓存
+            luaL_unref(L, LUA_REGISTRYINDEX, it->second.registry_ref);
+            _adapter_cache.erase(it);
+            it = _adapter_cache.end();  // 标记为未命中
+        }
+    }
+
+    // === 3. 未命中：转换数据并缓存 ===
+    if (it == _adapter_cache.end()) {
+        // 转换数据
+        if (!data_adapter->push_to_lua(L, error_msg)) {
+            result.matched = false;
+            if (error_msg) {
+                result.message = *error_msg;
+            }
+            return false;
+        }
+
+        // 存入 Registry
+        int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+
+        // 保存缓存（保存 weak_ptr）
+        _adapter_cache[adapter_id] = {ref, data_adapter};
+
+        // 重新获取 table 到栈顶
+        lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+    }
+
+    // === 4. 执行字段修改命令（由引擎侧调用）===
+    if (!data_adapter->execute_commands(L, error_msg)) {
+        result.matched = false;
+        if (error_msg) {
+            result.message = *error_msg;
+        }
+        lua_pop(L, 1);  // 弹出 table
+        return false;
+    }
+
+    // === 5. 调用规则匹配函数 ===
     // 从规则函数表中获取对应规则的match函数
     lua_getglobal(L, "_rule_functions");
     if (!lua_istable(L, -1)) {
@@ -403,16 +387,10 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
         return false;
     }
 
-    // 将数据压入栈顶
-    if (!data_adapter.push_to_lua(L, error_msg)) {
-        result.matched = false;
-        if (error_msg) {
-            result.message = *error_msg;
-        }
-        return false;
-    }
+    // 交换栈顶：现在 -1 是函数，-2 是数据 table
+    lua_insert(L, -2);
 
-    // 调用match函数，1个参数，2个返回值
+    // 调用match函数，1个参数（数据 table），2个返回值
     if (lua_pcall(L, 1, 2, 0) != LUA_OK) {
         // Lua 调用失败（包括 C++ 异常），标记为匹配失败
         result.matched = false;
@@ -682,6 +660,20 @@ std::unique_ptr<RuleEngine> RuleEngine::clone(CloneOptions options,
     }
 
     return new_engine;
+}
+
+void RuleEngine::cleanup_expired_cache() const {
+    auto it = _adapter_cache.begin();
+    while (it != _adapter_cache.end()) {
+        // 检查 weak_ptr 是否过期
+        if (it->second.weak_ptr.expired()) {
+            // 过期了，清理缓存
+            luaL_unref(_lua_state.get(), LUA_REGISTRYINDEX, it->second.registry_ref);
+            it = _adapter_cache.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 } // namespace ljre

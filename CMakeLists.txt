@@ -32,6 +32,8 @@ set(JSON_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include" CACH
 # 规则引擎库
 add_library(ljre STATIC
     src/lua_state.cpp
+    src/data_adapter.cpp
+    src/basic_data_adapter.cpp
     src/json_adapter.cpp
     src/rule_engine.cpp
 )
