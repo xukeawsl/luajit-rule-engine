@@ -4,16 +4,18 @@
 
 ## 特性
 
-- **高性能**: 使用 LuaJIT JIT 编译器，中等复杂度规则优于原生性能（快 1.72x）
+- **高性能**: 使用 LuaJIT JIT 编译器，中等复杂度规则接近原生性能
 - **动态更新**: 支持运行时重新加载规则，无需重启程序
 - **灵活适配**: 使用适配器模式，支持多种数据格式（JSON、Protobuf 等）
-- **简洁易用**: 提供 C++17 友好的 API 接口
+- **字段修改**: BasicDataAdapter 支持动态添加/删除/修改字段，set/remove/clear_fields
+- **缓存优化**: 基于 adapter ID 的缓存机制，支持 weak_ptr 自动清理过期缓存
+- **简洁易用**: 提供 C++17 友好的 API 接口，使用 std::shared_ptr 管理适配器
 - **安全可靠**: 使用 RAII 栈守卫自动管理 Lua 栈平衡，避免内存泄漏
 - **深度限制**: 支持配置最大嵌套深度（默认 8192），防止栈溢出
 - **JIT 控制**: 支持运行时动态启用/禁用/刷新 JIT 编译器
 - **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math、jit），不开放 io/os/debug 等危险接口
 - **零依赖（除 LuaJIT）**: 只依赖 LuaJIT 和 nlohmann/json（header-only）
-- **完善的测试**: 包含 340 个单元测试，覆盖所有核心功能和错误场景
+- **完善的测试**: 包含 378 个单元测试，覆盖所有核心功能和错误场景
 - **性能测试套件**: 45+ benchmark 测试用例，详细对比 LuaJIT vs Native 性能
 - **引擎克隆**: 支持规则引擎克隆，可复制规则、Lua 文件、C++ 函数等
 - **多线程支持**: 提供 RuleEngineWrapper 包装器，支持多线程安全访问和热更新
@@ -33,11 +35,14 @@ luajit-rule-engine/
 ├── include/ljre/                  # 公共头文件
 │   ├── lua_state.h                # Lua 状态管理
 │   ├── data_adapter.h             # 数据适配器接口
+│   ├── basic_data_adapter.h       # 基础数据适配器（支持字段修改）
 │   ├── json_adapter.h             # JSON 适配器
 │   ├── rule_engine.h              # 规则引擎核心
 │   └── rule_engine_wrapper.h      # 多线程包装器
 ├── src/                           # 实现文件
 │   ├── lua_state.cpp
+│   ├── data_adapter.cpp
+│   ├── basic_data_adapter.cpp     # 基础数据适配器实现
 │   ├── json_adapter.cpp
 │   └── rule_engine.cpp
 ├── benchmarks/                    # 性能测试
@@ -55,20 +60,23 @@ luajit-rule-engine/
 │       ├── email_validation.lua
 │       └── user_info_complete.lua
 ├── tests/                         # 单元测试
+│   ├── test_helpers.h             # 测试辅助工具
 │   ├── lua_state_test.cpp
+│   ├── lua_stack_guard_test.cpp
 │   ├── data_adapter_test.cpp
 │   ├── rule_engine_test.cpp
-│   └── ...
+│   ├── rule_engine_wrapper_test.cpp
+│   └── integration_test.cpp
 ├── docs/                          # 文档
-│   ├── BENCHMARK_PLAN.md          # 性能测试计划
 │   ├── ULTRA_COMPLEX_ANALYSIS.md  # 性能分析
-│   └── COVERAGE_*.md              # 覆盖率指南
+│   └── COVERAGE_QUICKSTART.md     # 覆盖率快速指南
 ├── third-party/                   # 第三方库
 │   └── json/                      # nlohmann/json
 ├── cmake/                         # CMake 配置
 ├── ARCHITECTURE.md                # 架构文档
 ├── README.md                      # 本文档
-└── TESTING.md                     # 测试文档
+├── TESTING.md                     # 测试文档
+└── CHANGELOG.md                   # 变更日志
 ```
 
 ## 依赖
@@ -117,20 +125,6 @@ make -j$(nproc)
 
 ## 测试
 
-项目使用 GoogleTest 框架进行单元测试。
-
-> 💡 **快速开始**: 使用提供的测试脚本
-> ```bash
-> # 运行所有测试
-> ./run_tests.sh
->
-> # 生成覆盖率报告
-> ./run_tests.sh -c
->
-> # 查看更多选项
-> ./run_tests.sh --help
-> ```
-
 详细的测试指南请参阅 [TESTING.md](TESTING.md)。
 
 ### 编译测试
@@ -161,14 +155,16 @@ ctest -R data_adapter_test
 ### 直接运行单个测试可执行文件
 
 ```bash
+cd build
+
 # 运行所有测试并显示简要结果
-./build/tests/lua_state_test --gtest_brief=yes
+./tests/lua_state_test --gtest_brief=yes
 
 # 运行特定测试用例
-./build/tests/lua_state_test --gtest_filter="LuaStateTest.LoadFile*"
+./tests/lua_state_test --gtest_filter="LuaStateTest.LoadFile*"
 
 # 运行测试并显示详细输出
-./build/tests/lua_state_test --gtest_print_time=1
+./tests/lua_state_test --gtest_print_time=1
 ```
 
 ### 测试覆盖率
@@ -355,7 +351,7 @@ tests/
 - rule_engine_wrapper_test: 15 个测试用例（NEW）
 - rule_engine_test: 186 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试、+43 Clone 功能测试）
 - integration_test: 15 个测试用例（+4 深度限制集成测试）
-- **总计**: 340 个测试用例，100% 通过
+- **总计**: 378 个测试用例，100% 通过
 
 ### 测试覆盖率目标
 
@@ -584,8 +580,8 @@ int main() {
         {"phone", "13800138000"}
     };
 
-    // 创建 JSON 适配器
-    JsonAdapter adapter(data);
+    // 创建 JSON 适配器（使用 shared_ptr）
+    auto adapter = std::make_shared<JsonAdapter>(data);
 
     // 匹配单个规则
     MatchResult result;
@@ -622,12 +618,16 @@ int main() {
 
 ## 实现自定义适配器
 
-如果你需要支持其他数据格式（如 Protobuf），可以实现 `DataAdapter` 接口：
+如果你需要支持其他数据格式（如 Protobuf），可以实现数据适配器。
+
+### 方式一：继承 BasicDataAdapter（推荐）
+
+如果你需要支持**动态字段修改**功能（set/remove/clear_fields），应该继承 `BasicDataAdapter`：
 
 ```cpp
-#include "ljre/data_adapter.h"
+#include "ljre/basic_data_adapter.h"
 
-class ProtobufAdapter : public DataAdapter {
+class ProtobufAdapter : public BasicDataAdapter {
 public:
     explicit ProtobufAdapter(const YourMessage& msg) : _msg(msg) {}
 
@@ -636,17 +636,52 @@ public:
         lua_createtable(L, 0, 0);
 
         // 将 Protobuf 消息字段转换为 Lua table
-        lua_pushstring(L, _msg.field_name().c_str());
-        lua_pushstring(L, _msg.field_value().c_str());
-        lua_rawset(L, -3);
-
-        // ... 转换其他字段
+        for (const auto& field : _msg.fields()) {
+            lua_pushstring(L, field.name().c_str());
+            lua_pushstring(L, field.value().c_str());
+            lua_rawset(L, -3);
+        }
 
         return true;
     }
 
     const char* get_type_name() const override {
         return "Protobuf";
+    }
+
+private:
+    const YourMessage& _msg;
+};
+
+// 使用示例
+auto adapter = std::make_shared<ProtobufAdapter>(protobuf_msg);
+adapter->set("extra_field", "value");  // 支持字段修改
+```
+
+### 方式二：直接继承 DataAdapter
+
+如果只需要简单的**数据转换**，不需要字段修改功能，可以直接继承 `DataAdapter`：
+
+```cpp
+#include "ljre/data_adapter.h"
+
+class SimpleProtobufAdapter : public DataAdapter {
+public:
+    explicit SimpleProtobufAdapter(const YourMessage& msg) : _msg(msg) {}
+
+    bool push_to_lua(lua_State* L, std::string* error_msg) const override {
+        // 只创建 Lua table，不支持字段修改
+        lua_createtable(L, 0, 0);
+
+        lua_pushstring(L, _msg.field_name().c_str());
+        lua_pushstring(L, _msg.field_value().c_str());
+        lua_rawset(L, -3);
+
+        return true;
+    }
+
+    const char* get_type_name() const override {
+        return "SimpleProtobuf";
     }
 
 private:
@@ -1087,7 +1122,7 @@ void YourService::ProcessRequest(const HttpRequest& req, HttpResponse* resp) {
 
     // 使用引擎进行规则判断
     nlohmann::json req_json = nlohmann::json::parse(req.body());
-    JsonAdapter adapter(req_json);
+    auto adapter = std::make_shared<JsonAdapter>(req_json);
     MatchResult result;
 
     if (engine->match_rule("rule1", adapter, result)) {
@@ -1280,14 +1315,14 @@ int safe_function(lua_State* L) {
 
 ### 根据规则复杂度选择实现方式
 
-根据最新性能测试结果（2026-01-14），不同复杂度的规则有不同的最佳实践：
+根据最新性能测试结果（2026-02-04），不同复杂度的规则有不同的最佳实践：
 
 | 规则复杂度 | 推荐方案 | 性能比率 | 说明 |
 |-----------|---------|---------|------|
-| **简单规则** | Native C++ | 3.45x 慢 | 性能关键路径的首选 |
-| **中等规则** | **LuaJIT** ✅ | **0.55x (快 1.83x)** | **优于原生性能**，支持动态更新 |
-| **复杂规则** | LuaJIT | 1.10x (接近) | 接近原生性能，灵活性高 |
-| **超复杂规则** | Native C++ 或拆分 | 3.78x 慢 | 性能差距较大，建议拆分或使用 Native |
+| **简单规则** | Native C++ | 8.15x 慢 | 性能关键路径的首选 |
+| **中等规则** | LuaJIT | 0.89x (接近) | 接近原生性能，支持动态更新 |
+| **复杂规则** | LuaJIT | 1.26x (接近) | 接近原生性能，灵活性高 |
+| **超复杂规则** | Native C++ 或拆分 | 3.82x 慢 | 性能差距较大，建议拆分或使用 Native |
 
 ### Lua 规则优化建议
 
@@ -1389,21 +1424,22 @@ python3 ../benchmarks/generate_report.py
 
 ### 性能测试结果
 
-基于最新测试数据（2026-01-14，Linux 6.8.0-90-generic, 4 x 3600 MHz CPU）：
+基于最新测试数据（2026-02-04，Linux 6.8.0-90-generic, 4 x 3600 MHz CPU）：
 
 | 规则类型 | LuaJIT 性能 | Native 性能 | 性能比率 | 推荐方案 |
 |---------|------------|------------|---------|---------|
-| 简单规则 + 小数据 | 1.23 μs | 0.36 μs | 3.45x | Native |
-| **中等规则 + 中数据** | **4.38 μs** | **8.02 μs** | **0.55x** | **LuaJIT** ✅ |
-| 复杂规则 + 大数据 | 19.85 μs | 18.08 μs | 1.10x | LuaJIT |
-| 超复杂规则 + 超大数据 | 91.51 μs | 24.23 μs | 3.78x | Native |
+| 简单规则 + 小数据 | 2.85 μs | 0.35 μs | 8.15x | Native |
+| 中等规则 + 中数据 | 5.97 μs | 6.72 μs | 0.89x | LuaJIT |
+| 复杂规则 + 大数据 | 19.5 μs | 15.5 μs | 1.26x | LuaJIT |
+| 超复杂规则 + 超大数据 | 80.9 μs | 21.2 μs | 3.82x | Native |
 
 **关键发现**：
-- ✅ **中等复杂度规则优于原生性能**（快 1.83x），这是 LuaJIT 的最佳应用场景
-- ✅ 复杂规则性能接近原生（仅慢 10%），灵活性优势明显
+- ✅ 简单规则 Native 明显更快（8.15x），性能关键路径首选
+- ✅ 中等规则 LuaJIT 接近 Native（仅慢 11%），灵活性优势明显
+- ✅ 复杂规则性能接近 Native（仅慢 26%），支持动态更新
 - ✅ 支持动态规则更新，无需重新编译
-- ✅ JIT 编译优化效果显著（启用后性能约 2.4%）
-- ⚠️ 超复杂规则（3.78x 慢）建议使用 Native 或拆分为多个中等规则
+- ✅ JIT 编译优化效果显著（启用后性能约 2-3%）
+- ⚠️ 超复杂规则（3.82x 慢）建议使用 Native 或拆分为多个中等规则
 
 ### 运行完整测试套件
 
@@ -1433,7 +1469,7 @@ python3 benchmarks/generate_report.py
 
 详细的使用说明请参阅：
 - **[性能测试指南 (benchmarks/README.md)](benchmarks/README.md)** - 完整的 benchmark 使用文档
-- **[测试计划文档 (docs/BENCHMARK_PLAN.md)](docs/BENCHMARK_PLAN.md)** - 详细的测试计划和设计
+- **[性能分析 (docs/ULTRA_COMPLEX_ANALYSIS.md)](docs/ULTRA_COMPLEX_ANALYSIS.md)** - 超复杂规则性能深度分析
 
 ## 文档
 

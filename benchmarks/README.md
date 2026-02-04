@@ -327,9 +327,10 @@ python3 benchmarks/generate_report.py --format json      # 只生成 JSON
 
 | 测试场景 | 预期性能 (JIT ON) | 预期性能 (Native) | 性能比率 |
 |---------|------------------|------------------|---------|
-| 简单规则 + 小数据 | 50-100 ns | 20-50 ns | 2-5x |
-| 中等规则 + 中数据 | 200-500 ns | 100-200 ns | 2-5x |
-| 复杂规则 + 大数据 | 1-5 μs | 500 ns-2 μs | 2-5x |
+| 简单规则 + 小数据 | 2.5-3.0 μs | 0.3-0.4 μs | 7-9x |
+| 中等规则 + 中数据 | 5-7 μs | 6-8 μs | 0.8-1.0x |
+| 复杂规则 + 大数据 | 15-25 μs | 12-20 μs | 1.0-1.5x |
+| 超复杂规则 + 超大数据 | 70-90 μs | 18-25 μs | 3.5-4.5x |
 
 ## 性能分析工具
 
@@ -394,7 +395,7 @@ ms_print massif.out.xxxxx
 
 ## 更多信息
 
-- [测试计划文档](../docs/BENCHMARK_PLAN.md) - 详细的测试计划和设计
+- [性能分析文档](../docs/ULTRA_COMPLEX_ANALYSIS.md) - 超复杂规则性能深度分析
 - [Google Benchmark 文档](https://github.com/google/benchmark) - Google Benchmark 使用指南
 
 ## 贡献

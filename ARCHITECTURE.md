@@ -708,7 +708,7 @@ void process_request(const Request& req) {
     auto engine = g_wrapper.get_engine();
 
     // 使用引擎
-    JsonAdapter adapter(req.json());
+    auto adapter = std::make_shared<JsonAdapter>(req.json());
     MatchResult result;
     engine->match_rule("rule1", adapter, result);
 }
@@ -1726,7 +1726,7 @@ if (!engine.load_rule_config("rules.lua", &error)) {
 
 // 2. 准备数据
 json data = { {"age", 25}, {"email", "test@example.com"} };
-JsonAdapter adapter(data);
+auto adapter = std::make_shared<JsonAdapter>(data);
 
 // 3. 批量匹配 (比逐个匹配更高效)
 // 注意：match_all_rules 返回 true 表示至少有一个规则匹配成功
