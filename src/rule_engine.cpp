@@ -319,16 +319,10 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
     auto it = _adapter_cache.find(adapter_id);
 
     if (it != _adapter_cache.end()) {
-        // 检查 weak_ptr 是否还有效
-        if (auto locked = it->second.weak_ptr.lock()) {
-            // 命中缓存：直接获取 table
-            lua_rawgeti(L, LUA_REGISTRYINDEX, it->second.registry_ref);
-        } else {
-            // weak_ptr 已过期，清理缓存
-            luaL_unref(L, LUA_REGISTRYINDEX, it->second.registry_ref);
-            _adapter_cache.erase(it);
-            it = _adapter_cache.end();  // 标记为未命中
-        }
+        // 命中缓存：直接获取 table
+        // 注：由于 adapter ID 是唯一且单调递增的，如果找到缓存，
+        //     一定是当前 shared_ptr 创建的，weak_ptr 肯定有效
+        lua_rawgeti(L, LUA_REGISTRYINDEX, it->second.registry_ref);
     }
 
     // === 3. 未命中：转换数据并缓存 ===
@@ -358,7 +352,6 @@ bool RuleEngine::call_match_function(const std::string& rule_name,
         if (error_msg) {
             result.message = *error_msg;
         }
-        lua_pop(L, 1);  // 弹出 table
         return false;
     }
 

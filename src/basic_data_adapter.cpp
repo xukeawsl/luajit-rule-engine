@@ -42,8 +42,7 @@ void BasicDataAdapter::clear_fields() {
 
 // === DataAdapter 接口实现 ===
 
-bool BasicDataAdapter::push_to_lua(lua_State* L, std::string* error_msg) const {
-    (void)error_msg;  // 未使用参数
+bool BasicDataAdapter::push_to_lua(lua_State* L, std::string* /*error_msg*/) const {
     lua_createtable(L, 0, 0);  // 创建空 table
     return true;
 }
@@ -58,8 +57,8 @@ bool BasicDataAdapter::execute_commands(lua_State* L, std::string* error_msg) co
     }
 
     // Lambda: 将 Value 压入栈
-    auto push_value = [&](const Value& v) {
-        std::visit([&](auto&& arg) {
+    auto push_value = [](lua_State* L, const Value& v) {
+        std::visit([L](auto&& arg) {
             using T = std::decay_t<decltype(arg)>;
 
             if constexpr (std::is_same_v<T, std::string>) {
@@ -76,18 +75,16 @@ bool BasicDataAdapter::execute_commands(lua_State* L, std::string* error_msg) co
 
     // 遍历所有字段并设置
     for (const auto& [key, value] : _fields) {
+        // 跳过空 key
         if (key.empty()) {
-            if (error_msg) {
-                *error_msg = "Cannot use empty key";
-            }
-            return false;
+            continue;
         }
 
         // 压入 key
         lua_pushlstring(L, key.data(), key.size());
 
         // 压入 value
-        push_value(value);
+        push_value(L, value);
 
         // 设置到 table
         lua_rawset(L, -3);  // table[key] = value

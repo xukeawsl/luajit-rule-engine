@@ -5693,3 +5693,309 @@ TEST_F(RuleEngineTest, CacheWithAggressiveCleanup_CleansExpiredAdapters) {
     ASSERT_TRUE(engine.match_rule("age_check", final_adapter, final_result, &error));
     EXPECT_TRUE(final_result.matched);
 }
+
+// 测试用类：访问内部缓存状态
+class RuleEngineCacheTest : public RuleEngine {
+public:
+    using RuleEngine::RuleEngine;
+    using RuleEngine::cleanup_expired_cache;
+    using RuleEngine::_cleanup_policy;
+    using RuleEngine::_adapter_cache;
+
+    size_t get_cache_size() const {
+        return _adapter_cache.size();
+    }
+
+    void set_cleanup_policy(CacheCleanupPolicy policy) {
+        _cleanup_policy = policy;
+    }
+};
+
+TEST_F(RuleEngineTest, WeakPtrExpired_CleansSingleCacheEntry) {
+    RuleEngineCacheTest engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 使用 Never 清理策略，不会自动清理
+    engine.set_cleanup_policy(CacheCleanupPolicy::Never);
+
+    // 创建 adapter 并使用，创建缓存
+    json data = {{"age", 25}};
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    EXPECT_TRUE(result.matched);
+
+    // 验证缓存已创建
+    EXPECT_EQ(engine.get_cache_size(), 1);
+
+    // 销毁 adapter，weak_ptr 过期
+    adapter.reset();
+
+    // 使用 Never 策略，过期缓存不会被自动清理（除非恰好访问到相同 ID）
+    // 所以缓存大小仍然是 1
+    EXPECT_EQ(engine.get_cache_size(), 1);
+
+    // 手动清理过期缓存
+    engine.cleanup_expired_cache();
+
+    // 现在缓存应该被清理了
+    EXPECT_EQ(engine.get_cache_size(), 0);
+
+    // 验证引擎仍然正常工作
+    json data2 = {{"age", 30}};
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+    EXPECT_TRUE(result2.matched);
+
+    // 新的缓存被创建
+    EXPECT_EQ(engine.get_cache_size(), 1);
+}
+
+TEST_F(RuleEngineTest, CleanupExpiredCache_RemovesAllExpired) {
+    RuleEngineCacheTest engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    engine.set_cleanup_policy(CacheCleanupPolicy::Never);
+
+    // 创建多个 adapter，创建多个缓存
+    std::vector<std::shared_ptr<JsonAdapter>> adapters;
+    for (int i = 0; i < 5; i++) {
+        json data = {{"age", 20 + i}};
+        auto adapter = std::make_shared<JsonAdapter>(data);
+        adapters.push_back(adapter);
+
+        MatchResult result;
+        ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    }
+
+    // 验证所有缓存都已创建
+    EXPECT_EQ(engine.get_cache_size(), 5);
+
+    // 销毁前 3 个 adapter
+    adapters[0].reset();
+    adapters[1].reset();
+    adapters[2].reset();
+
+    // 手动调用清理过期缓存
+    engine.cleanup_expired_cache();
+
+    // 验证只有 2 个缓存保留（后 2 个 adapter 仍然存活）
+    EXPECT_EQ(engine.get_cache_size(), 2);
+
+    // 清理剩余的 adapter
+    adapters[3].reset();
+    adapters[4].reset();
+
+    // 再次清理
+    engine.cleanup_expired_cache();
+
+    // 验证所有缓存都被清理
+    EXPECT_EQ(engine.get_cache_size(), 0);
+}
+
+TEST_F(RuleEngineTest, AggressiveCleanup_CleansExpiredOnEveryCall) {
+    RuleEngineCacheTest engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 使用 Aggressive 清理策略（默认策略）
+    engine.set_cleanup_policy(CacheCleanupPolicy::Aggressive);
+
+    // 创建并销毁多个 adapter
+    std::vector<std::shared_ptr<JsonAdapter>> adapters;
+    for (int i = 0; i < 10; i++) {
+        json data = {{"age", 20 + i}};
+        auto adapter = std::make_shared<JsonAdapter>(data);
+        adapters.push_back(adapter);
+
+        MatchResult result;
+        ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+    }
+
+    // 所有 adapter 都存活，应该有 10 个缓存
+    EXPECT_EQ(engine.get_cache_size(), 10);
+
+    // 销毁前 5 个 adapter
+    for (int i = 0; i < 5; i++) {
+        adapters[i].reset();
+    }
+
+    // 下一次调用会自动清理过期的缓存
+    json next_data = {{"age", 100}};
+    auto next_adapter = std::make_shared<JsonAdapter>(next_data);
+
+    MatchResult next_result;
+    ASSERT_TRUE(engine.match_rule("age_check", next_adapter, next_result, &error));
+
+    // 应该有 6 个缓存：5 个存活的 + 1 个新创建的
+    EXPECT_EQ(engine.get_cache_size(), 6);
+
+    // 销毁所有 adapter
+    for (auto& adapter : adapters) {
+        adapter.reset();
+    }
+    next_adapter.reset();
+
+    // 再调用一次，触发清理
+    json final_data = {{"age", 200}};
+    auto final_adapter = std::make_shared<JsonAdapter>(final_data);
+
+    MatchResult final_result;
+    ASSERT_TRUE(engine.match_rule("age_check", final_adapter, final_result, &error));
+
+    // 应该只有 1 个缓存：最新创建的
+    EXPECT_EQ(engine.get_cache_size(), 1);
+}
+
+TEST_F(RuleEngineTest, NeverCleanup_KeepsExpiredCacheUntilManuallyCleaned) {
+    RuleEngineCacheTest engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 使用 Never 清理策略
+    engine.set_cleanup_policy(CacheCleanupPolicy::Never);
+
+    // 创建并销毁 adapter
+    json data = {{"age", 25}};
+    auto adapter = std::make_shared<JsonAdapter>(data);
+
+    MatchResult result;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter, result, &error));
+
+    EXPECT_EQ(engine.get_cache_size(), 1);
+
+    // 销毁 adapter
+    adapter.reset();
+
+    // 创建另一个 adapter（使用 Never 策略，不会自动清理）
+    json data2 = {{"age", 30}};
+    auto adapter2 = std::make_shared<JsonAdapter>(data2);
+
+    MatchResult result2;
+    ASSERT_TRUE(engine.match_rule("age_check", adapter2, result2, &error));
+
+    // 使用 Never 策略，过期缓存不会被自动清理
+    // 但如果恰好访问到过期的缓存条目，会清理该条目
+    // 由于 ID 不同，可能访问不到，所以缓存大小可能还是 1 或 2
+    EXPECT_GE(engine.get_cache_size(), 1);
+
+    // 手动清理
+    engine.cleanup_expired_cache();
+
+    // 现在应该只有当前 adapter 的缓存
+    EXPECT_EQ(engine.get_cache_size(), 1);
+}
+
+// ============================================================================
+// 测试：用户自定义 DataAdapter 的 push_to_lua 不放 table 到栈顶
+// ============================================================================
+
+// 测试用的 BadDataAdapter：push_to_lua 不放 table，而是放 nil
+// 继承自 BasicDataAdapter，所以 execute_commands 会检查栈顶
+class BadDataAdapterNil : public BasicDataAdapter {
+public:
+    BadDataAdapterNil() = default;
+    ~BadDataAdapterNil() override = default;
+
+    bool push_to_lua(lua_State* L, std::string* error_msg = nullptr) const override {
+        (void)error_msg;
+        lua_pushnil(L);  // 错误：不放 table，放 nil
+        return true;
+    }
+
+    const char* get_type_name() const override {
+        return "BadDataAdapterNil";
+    }
+};
+
+// 测试用的 BadDataAdapter：push_to_lua 放 number 而不是 table
+class BadDataAdapterNumber : public BasicDataAdapter {
+public:
+    BadDataAdapterNumber() = default;
+    ~BadDataAdapterNumber() override = default;
+
+    bool push_to_lua(lua_State* L, std::string* error_msg = nullptr) const override {
+        (void)error_msg;
+        lua_pushnumber(L, 42);  // 错误：放 number 而不是 table
+        return true;
+    }
+
+    const char* get_type_name() const override {
+        return "BadDataAdapterNumber";
+    }
+};
+
+// 测试用的 BadDataAdapter：push_to_lua 放 string 而不是 table
+class BadDataAdapterString : public BasicDataAdapter {
+public:
+    BadDataAdapterString() = default;
+    ~BadDataAdapterString() override = default;
+
+    bool push_to_lua(lua_State* L, std::string* error_msg = nullptr) const override {
+        (void)error_msg;
+        lua_pushstring(L, "not a table");  // 错误：放 string 而不是 table
+        return true;
+    }
+
+    const char* get_type_name() const override {
+        return "BadDataAdapterString";
+    }
+};
+
+TEST_F(RuleEngineTest, CustomAdapter_PushToLuaNotTable_ExecuteCommandsFails) {
+    // 测试场景：用户自定义的 DataAdapter 的 push_to_lua 没有正确放置 table
+    // 导致 execute_commands 因为栈顶不是 table 而失败
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    // 测试 push_to_lua 放 nil 的情况
+    auto bad_adapter_nil = std::make_shared<BadDataAdapterNil>();
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("age_check", bad_adapter_nil, result, &error));
+
+    EXPECT_FALSE(result.matched);
+    EXPECT_STREQ(error.c_str(), "Stack top is not a table");
+    EXPECT_FALSE(result.message.empty());
+}
+
+TEST_F(RuleEngineTest, CustomAdapter_PushToLuaNumber_ExecuteCommandsFails) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto bad_adapter_number = std::make_shared<BadDataAdapterNumber>();
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("age_check", bad_adapter_number, result, &error));
+
+    EXPECT_FALSE(result.matched);
+    EXPECT_STREQ(error.c_str(), "Stack top is not a table");
+}
+
+TEST_F(RuleEngineTest, CustomAdapter_PushToLuaString_ExecuteCommandsFails) {
+    RuleEngine engine;
+    std::string error;
+
+    ASSERT_TRUE(engine.add_rule("age_check", "test_data/rules/age_check.lua", &error));
+
+    auto bad_adapter_string = std::make_shared<BadDataAdapterString>();
+
+    MatchResult result;
+    EXPECT_FALSE(engine.match_rule("age_check", bad_adapter_string, result, &error));
+
+    EXPECT_FALSE(result.matched);
+    EXPECT_STREQ(error.c_str(), "Stack top is not a table");
+}

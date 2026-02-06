@@ -278,6 +278,21 @@ protected:
     // 测试类可以继承 RuleEngine 并访问这些成员
     LuaState& get_lua_state() { return _lua_state; }
 
+    // 缓存条目
+    struct AdapterCacheEntry {
+        int registry_ref;                    // Lua Registry 引用
+        std::weak_ptr<DataAdapter> weak_ptr; // 用于检查是否过期
+    };
+
+    // 缓存清理策略
+    CacheCleanupPolicy _cleanup_policy;
+
+    // 适配器缓存（用 ID 作为 key）
+    mutable std::unordered_map<uint64_t, AdapterCacheEntry> _adapter_cache;
+
+    // 清理过期的缓存
+    void cleanup_expired_cache() const;
+
 private:
     struct Rule {
         std::string name;
@@ -313,21 +328,6 @@ private:
     LuaState _lua_state;
     std::unordered_map<std::string, Rule> _rules;
     mutable EngineMetadata _metadata;
-    CacheCleanupPolicy _cleanup_policy;
-
-    // === 适配器缓存机制 ===
-
-    // 缓存条目
-    struct AdapterCacheEntry {
-        int registry_ref;                    // Lua Registry 引用
-        std::weak_ptr<DataAdapter> weak_ptr; // 用于检查是否过期
-    };
-
-    // 适配器缓存（用 ID 作为 key）
-    mutable std::unordered_map<uint64_t, AdapterCacheEntry> _adapter_cache;
-
-    // 清理过期的缓存
-    void cleanup_expired_cache() const;
 
     // 内部方法：加载规则文件
     bool load_rule_file(const std::string& file_path, std::string* error_msg);

@@ -2,6 +2,7 @@
 #include <gmock/gmock.h>
 #include "ljre/data_adapter.h"
 #include "ljre/json_adapter.h"
+#include "ljre/basic_data_adapter.h"
 #include "ljre/lua_state.h"
 #include <string>
 
@@ -1230,4 +1231,216 @@ TEST_F(JsonAdapterTest, DeepArrayNesting_TruncatesCorrectly) {
     // 超过最大深度的部分会被截断为 nil
 
     lua_pop(_L, 1); // 清理栈
+}
+
+// ============================================================================
+// DataAdapter 接口的 execute_commands 测试
+// ============================================================================
+
+// 测试用的 DataAdapter 实现，只继承基类不重写 execute_commands
+class TestDataAdapter : public DataAdapter {
+public:
+    TestDataAdapter() = default;
+    ~TestDataAdapter() override = default;
+
+    // 实现纯虚函数
+    bool push_to_lua(lua_State* L, std::string* error_msg = nullptr) const override {
+        (void)error_msg;
+        lua_newtable(L);
+        return true;
+    }
+
+    const char* get_type_name() const override {
+        return "TestDataAdapter";
+    }
+};
+
+TEST_F(JsonAdapterTest, DataAdapter_ExecuteCommands_Default_ReturnsTrue) {
+    TestDataAdapter adapter;
+
+    // 创建一个表
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error)) << error;
+
+    // 调用默认的 execute_commands（应该返回 true，不做任何操作）
+    EXPECT_TRUE(adapter.execute_commands(_L, &error)) << error;
+
+    // 表应该是空的
+    EXPECT_EQ(lua_objlen(_L, -1), 0);
+
+    lua_pop(_L, 1);
+}
+
+// ============================================================================
+// BasicDataAdapter 测试
+// ============================================================================
+
+class BasicDataAdapterTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        ASSERT_TRUE(_state.is_valid());
+        _L = _state.get();
+    }
+
+    LuaState _state;
+    lua_State* _L;
+};
+
+TEST_F(BasicDataAdapterTest, ExecuteCommands_SkipsEmptyKey) {
+    BasicDataAdapter adapter;
+    adapter.set("name", "test");
+    adapter.set("", "should_be_skipped");  // 空键应该被跳过
+    adapter.set("value", 42);
+
+    // 使用 push_to_lua 创建表（模拟实际使用场景）
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error)) << error;
+
+    // 调用 execute_commands 填充字段
+    ASSERT_TRUE(adapter.execute_commands(_L, &error)) << error;
+
+    // 验证 name 和 value 存在
+
+    // 验证 name 和 value 存在
+    lua_pushstring(_L, "name");
+    lua_rawget(_L, -2);
+    EXPECT_TRUE(lua_isstring(_L, -1));
+    EXPECT_STREQ(lua_tostring(_L, -1), "test");
+    lua_pop(_L, 1);
+
+    lua_pushstring(_L, "value");
+    lua_rawget(_L, -2);
+    EXPECT_TRUE(lua_isnumber(_L, -1));
+    EXPECT_EQ(lua_tointeger(_L, -1), 42);
+    lua_pop(_L, 1);
+
+    // 验证空键不存在
+    lua_pushstring(_L, "");
+    lua_rawget(_L, -2);
+    EXPECT_TRUE(lua_isnil(_L, -1)) << "Empty key should not exist in table";
+    lua_pop(_L, 1);
+
+    lua_pop(_L, 1);  // 清理 table
+}
+
+TEST_F(BasicDataAdapterTest, ExecuteCommands_MultipleEmptyKeys_AllSkipped) {
+    BasicDataAdapter adapter;
+    adapter.set("field1", "value1");
+    adapter.set("", "skip1");
+    adapter.set("field2", 123);
+    adapter.set("", "skip2");
+    adapter.set("field3", true);
+
+    // 使用 push_to_lua 创建表
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error)) << error;
+
+    // 调用 execute_commands 填充字段
+    ASSERT_TRUE(adapter.execute_commands(_L, &error)) << error;
+
+    // 验证所有字段都存在
+
+    // 验证所有字段都存在
+    lua_pushstring(_L, "field1");
+    lua_rawget(_L, -2);
+    EXPECT_TRUE(lua_isstring(_L, -1));
+    lua_pop(_L, 1);
+
+    lua_pushstring(_L, "field2");
+    lua_rawget(_L, -2);
+    EXPECT_TRUE(lua_isnumber(_L, -1));
+    lua_pop(_L, 1);
+
+    lua_pushstring(_L, "field3");
+    lua_rawget(_L, -2);
+    EXPECT_TRUE(lua_isboolean(_L, -1));
+    lua_pop(_L, 1);
+
+    lua_pop(_L, 1);
+}
+
+TEST_F(BasicDataAdapterTest, ExecuteCommands_OnlyEmptyKeys_TableEmpty) {
+    BasicDataAdapter adapter;
+    adapter.set("", "value1");
+    adapter.set("", "value2");
+
+    // 使用 push_to_lua 创建表
+    std::string error;
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error)) << error;
+
+    // 调用 execute_commands 填充字段
+    ASSERT_TRUE(adapter.execute_commands(_L, &error)) << error;
+
+    // table 应该是空的
+    EXPECT_EQ(lua_objlen(_L, -1), 0);
+
+    lua_pop(_L, 1);
+}
+
+TEST_F(BasicDataAdapterTest, ExecuteCommands_StackTopNotTable_ReturnsFalse) {
+    BasicDataAdapter adapter;
+    adapter.set("field1", "value1");
+
+    // 栈顶放一个字符串而不是 table
+    lua_pushstring(_L, "not_a_table");
+
+    std::string error;
+    EXPECT_FALSE(adapter.execute_commands(_L, &error));
+    EXPECT_EQ(error, "Stack top is not a table");
+
+    lua_pop(_L, 1);  // 清理栈
+}
+
+TEST_F(BasicDataAdapterTest, ExecuteCommands_StackTopNil_ReturnsFalse) {
+    BasicDataAdapter adapter;
+    adapter.set("field1", "value1");
+
+    // 栈顶放 nil
+    lua_pushnil(_L);
+
+    std::string error;
+    EXPECT_FALSE(adapter.execute_commands(_L, &error));
+    EXPECT_EQ(error, "Stack top is not a table");
+
+    lua_pop(_L, 1);  // 清理栈
+}
+
+TEST_F(BasicDataAdapterTest, ExecuteCommands_StackTopNumber_ReturnsFalse) {
+    BasicDataAdapter adapter;
+    adapter.set("field1", "value1");
+
+    // 栈顶放一个数字
+    lua_pushnumber(_L, 42);
+
+    std::string error;
+    EXPECT_FALSE(adapter.execute_commands(_L, &error));
+    EXPECT_EQ(error, "Stack top is not a table");
+
+    lua_pop(_L, 1);  // 清理栈
+}
+
+TEST_F(BasicDataAdapterTest, ExecuteCommands_EmptyStack_ReturnsFalse) {
+    BasicDataAdapter adapter;
+    adapter.set("field1", "value1");
+
+    // 栈是空的，栈顶绝对不是 table
+    // 确保栈是空的
+    lua_settop(_L, 0);
+
+    std::string error;
+    EXPECT_FALSE(adapter.execute_commands(_L, &error));
+    EXPECT_EQ(error, "Stack top is not a table");
+}
+
+TEST_F(BasicDataAdapterTest, ExecuteCommands_NoErrorNull_ReturnsFalse) {
+    BasicDataAdapter adapter;
+    adapter.set("field1", "value1");
+
+    // 栈顶放一个字符串而不是 table，不传 error_msg
+    lua_pushstring(_L, "not_a_table");
+
+    // 不传递 error_msg 参数，应该返回 false 但不设置错误信息
+    EXPECT_FALSE(adapter.execute_commands(_L, nullptr));
+
+    lua_pop(_L, 1);  // 清理栈
 }

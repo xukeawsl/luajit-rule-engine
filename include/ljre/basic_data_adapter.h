@@ -13,8 +13,7 @@ namespace ljre {
  * 特性：
  * - 继承自 DataAdapter，自动获得唯一 ID
  * - 支持设置字符串、数字、布尔值、null
- * - 支持删除字段
- * - 命令队列机制，延迟执行
+ * - 支持删除字段和清空所有字段
  *
  * 使用示例：
  * @code
@@ -24,6 +23,8 @@ namespace ljre {
  * adapter->set("score", 95.5);
  * adapter->set("active", true);
  * adapter->set_null("optional_field");
+ * adapter->remove("user_id");  // 删除字段
+ * adapter->clear_fields();     // 清空所有字段
  *
  * engine->match_rule("rule1", adapter, result);
  * @endcode
