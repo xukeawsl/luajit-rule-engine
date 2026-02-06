@@ -2342,7 +2342,7 @@ public:
     }
 
     int get_value(lua_State* L) {
-        lua_pushnumber(L, value_);
+        lua_pushnumber(L, _value);
         return 1;
     }
 
@@ -2353,7 +2353,7 @@ public:
             return 0;
         }
 
-        value_ = lua_tonumber(L, 1);
+        _value = lua_tonumber(L, 1);
         return 0;
     }
 
@@ -2374,7 +2374,7 @@ public:
     }
 
 private:
-    double value_ = 100.0;
+    double _value = 100.0;
 };
 
 // ============================================================================
@@ -2427,7 +2427,7 @@ public:
             }
 
             double value = lua_tonumber(L, 1);
-            lua_pushnumber(L, value + this->offset_);
+            lua_pushnumber(L, value + this->_offset);
             return 1;
 
         } catch (const std::exception& e) {
@@ -2448,7 +2448,7 @@ public:
     }
 
 private:
-    double offset_ = 100.0;
+    double _offset = 100.0;
 };
 TEST_F(RuleEngineTest, RegisterNormalFunction_Success) {
     RuleEngine engine;
@@ -3978,17 +3978,17 @@ TEST_F(RuleEngineTest, Clone_CPP_FUNCTIONS_ClonedFunctionsWork) {
 
 class TestClass {
 public:
-    int value = 100;
+    int _value = 100;
 
     int get_value(lua_State* L) {
-        lua_pushnumber(L, value);
+        lua_pushnumber(L, _value);
         return 1;
     }
 
     int add(lua_State* L) {
         double a = lua_tonumber(L, 1);
         double b = lua_tonumber(L, 2);
-        lua_pushnumber(L, a + b + value);
+        lua_pushnumber(L, a + b + _value);
         return 1;
     }
 
@@ -4008,8 +4008,8 @@ TEST_F(RuleEngineTest, Clone_CPP_MEMBER_FUNCTIONS_ClonesAllMemberFunctions) {
     std::string error;
 
     TestClass obj1, obj2;
-    obj1.value = 100;
-    obj2.value = 200;
+    obj1._value = 100;
+    obj2._value = 200;
 
     ASSERT_TRUE(engine.register_function("get_value1", &TestClass::get_value_dispatcher, &obj1, &error));
     ASSERT_TRUE(engine.register_function("get_value2", &TestClass::get_value_dispatcher, &obj2, &error));
@@ -4026,7 +4026,7 @@ TEST_F(RuleEngineTest, Clone_CPP_MEMBER_FUNCTIONS_ClonedFunctionsWork) {
     std::string error;
 
     TestClass obj;
-    obj.value = 123;
+    obj._value = 123;
 
     ASSERT_TRUE(engine.register_function("get_val", &TestClass::get_value_dispatcher, &obj, &error));
 

@@ -49,29 +49,27 @@ ctest --rerun-failed --output-on-failure
 
 | 测试文件 | 测试内容 | 测试用例数 | 状态 |
 |---------|---------|-----------|------|
-| `lua_state_test.cpp` | Lua 状态管理 | 52 | ✅ 全部通过 |
-| `lua_stack_guard_test.cpp` | Lua 栈守卫 | 17 | ✅ 全部通过 |
-| `data_adapter_test.cpp` | 数据适配器 | 55 | ✅ 全部通过 |
-| `rule_engine_test.cpp` | 规则引擎 | 186 | ✅ 全部通过 |
-| `rule_engine_wrapper_test.cpp` | 规则引擎包装器 | 15 | ✅ 全部通过 |
-| `integration_test.cpp` | 集成测试 | 15 | ✅ 全部通过 |
-| **总计** | | **340** | **✅ 100% 通过** |
+| `rule_engine_test.cpp` | 规则引擎核心功能 | 数百个 | ✅ 全部通过 |
+| `data_adapter_test.cpp` | 数据适配器 | 数十个 | ✅ 全部通过 |
+| `integration_test.cpp` | 集成测试 | 数十个 | ✅ 全部通过 |
+| 其他测试文件 | 各组件单元测试 | 数十个 | ✅ 全部通过 |
+| **总计** | | **上百个** | **✅ 100% 通过** |
 
 ### 测试分类
 
 #### 1. 单元测试 (Unit Tests)
 
-**lua_state_test.cpp** - LuaState 类测试 (52个测试用例)
+**lua_state_test.cpp** - LuaState 类测试
 - 构造和析构测试（移动语义）
 - 文件加载测试（成功/失败场景）
 - Buffer 加载测试
-- 错误处理测试（包括栈顶非字符串场景：table、boolean、nil、function、userdata、thread）
+- 错误处理测试
 - 栈操作测试
 - 安全性测试
 - 边界条件测试
-- JIT 控制测试（enable/disable/flush 及各种组合场景）
+- JIT 控制测试
 
-**lua_stack_guard_test.cpp** - LuaStackGuard 类测试 (17个测试用例)
+**lua_stack_guard_test.cpp** - LuaStackGuard 类测试
 - 基本栈恢复测试
 - 多次 push/pop 测试
 - 嵌套守卫测试
@@ -81,7 +79,7 @@ ctest --rerun-failed --output-on-failure
 - 表迭代场景测试
 - 错误处理场景测试
 
-**data_adapter_test.cpp** - JsonAdapter 类测试 (55个测试用例)
+**data_adapter_test.cpp** - 数据适配器测试
 - 基本类型转换（null, boolean, number, string）
 - 数组转换测试
 - 对象转换测试
@@ -99,7 +97,7 @@ ctest --rerun-failed --output-on-failure
 
 #### 2. 集成测试 (Integration Tests)
 
-**rule_engine_test.cpp** - 规则引擎集成测试 (186个测试用例)
+**rule_engine_test.cpp** - 规则引擎集成测试（数百个测试用例）
 - 规则加载和卸载
 - 规则匹配（单个和批量）
 - 规则热更新
@@ -160,7 +158,7 @@ ctest --rerun-failed --output-on-failure
   - 复杂场景测试（完整工作流、多引擎协作）
   - 功能验证测试（克隆后功能正常）
 
-**rule_engine_wrapper_test.cpp** - 规则引擎包装器测试 (15个测试用例)
+**rule_engine_wrapper_test.cpp** - 规则引擎包装器测试（数十个测试用例）
 - 基础功能测试（4个测试用例）
   - 默认构造测试
   - 获取引擎前测试
@@ -184,7 +182,7 @@ ctest --rerun-failed --output-on-failure
 - 性能测试（1个测试用例）
   - get_engine() 性能测试（10000次迭代，< 1μs）
 
-**integration_test.cpp** - 端到端场景测试 (15个测试用例)
+**integration_test.cpp** - 端到端场景测试（数十个测试用例）
 - 用户注册验证
 - 规则动态管理
 - 多引擎独立运行

@@ -27,29 +27,29 @@ TEST(DataAdapterTest, VirtualDestructor_CanDeleteDerived) {
 class JsonAdapterTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        ASSERT_TRUE(state_.is_valid());
-        L_ = state_.get();
+        ASSERT_TRUE(_state.is_valid());
+        _L = _state.get();
     }
 
     // 辅助函数：检查栈顶值的类型
-    bool is_nil(int idx = -1) { return lua_isnil(L_, idx); }
-    bool is_boolean(int idx = -1) { return lua_isboolean(L_, idx); }
-    bool is_number(int idx = -1) { return lua_isnumber(L_, idx); }
-    bool is_string(int idx = -1) { return lua_isstring(L_, idx); }
-    bool is_table(int idx = -1) { return lua_istable(L_, idx); }
+    bool is_nil(int idx = -1) { return lua_isnil(_L, idx); }
+    bool is_boolean(int idx = -1) { return lua_isboolean(_L, idx); }
+    bool is_number(int idx = -1) { return lua_isnumber(_L, idx); }
+    bool is_string(int idx = -1) { return lua_isstring(_L, idx); }
+    bool is_table(int idx = -1) { return lua_istable(_L, idx); }
 
     // 辅助函数：获取栈顶的值
-    bool get_boolean(int idx = -1) { return lua_toboolean(L_, idx) != 0; }
-    lua_Integer get_integer(int idx = -1) { return lua_tointeger(L_, idx); }
-    lua_Number get_number(int idx = -1) { return lua_tonumber(L_, idx); }
+    bool get_boolean(int idx = -1) { return lua_toboolean(_L, idx) != 0; }
+    lua_Integer get_integer(int idx = -1) { return lua_tointeger(_L, idx); }
+    lua_Number get_number(int idx = -1) { return lua_tonumber(_L, idx); }
     std::string get_string(int idx = -1) {
         size_t len;
-        const char* str = lua_tolstring(L_, idx, &len);
+        const char* str = lua_tolstring(_L, idx, &len);
         return std::string(str, len);
     }
 
-    LuaState state_;
-    lua_State* L_;
+    LuaState _state;
+    lua_State* _L;
 };
 
 TEST_F(JsonAdapterTest, NullValue_ConvertsToNil) {
@@ -57,7 +57,7 @@ TEST_F(JsonAdapterTest, NullValue_ConvertsToNil) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_nil());
 }
@@ -67,7 +67,7 @@ TEST_F(JsonAdapterTest, BooleanTrue_ConvertsToLuaBoolean) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_boolean());
     EXPECT_TRUE(get_boolean());
@@ -78,7 +78,7 @@ TEST_F(JsonAdapterTest, BooleanFalse_ConvertsToLuaBoolean) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_boolean());
     EXPECT_FALSE(get_boolean());
@@ -89,7 +89,7 @@ TEST_F(JsonAdapterTest, Integer_ConvertsToLuaInteger) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_number());
     EXPECT_EQ(get_integer(), 42);
@@ -100,7 +100,7 @@ TEST_F(JsonAdapterTest, NegativeInteger_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_number());
     EXPECT_EQ(get_integer(), -12345);
@@ -111,7 +111,7 @@ TEST_F(JsonAdapterTest, Float_ConvertsToLuaNumber) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_number());
     EXPECT_DOUBLE_EQ(get_number(), 3.14159);
@@ -122,7 +122,7 @@ TEST_F(JsonAdapterTest, String_ConvertsToLuaString) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "hello world");
@@ -133,7 +133,7 @@ TEST_F(JsonAdapterTest, EmptyString_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "");
@@ -144,7 +144,7 @@ TEST_F(JsonAdapterTest, UnicodeString_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "你好世界 🌍");
@@ -156,7 +156,7 @@ TEST_F(JsonAdapterTest, StringWithNullChar_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), str_with_null);
@@ -167,7 +167,7 @@ TEST_F(JsonAdapterTest, StringWithSpecialChars_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "line1\nline2\ttab\r\n");
@@ -182,15 +182,15 @@ TEST_F(JsonAdapterTest, EmptyArray_ConvertsToEmptyTable) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查表长度 - lua_objlen returns length, doesn't push to stack
-    size_t len = lua_objlen(L_, -1);
+    size_t len = lua_objlen(_L, -1);
     EXPECT_EQ(len, 0);
 
-    lua_pop(L_, 1);  // 弹出 table
+    lua_pop(_L, 1);  // 弹出 table
 }
 
 TEST_F(JsonAdapterTest, IntegerArray_ConvertsToLuaTable) {
@@ -198,24 +198,24 @@ TEST_F(JsonAdapterTest, IntegerArray_ConvertsToLuaTable) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查数组长度
-    size_t len = lua_objlen(L_, -1);
+    size_t len = lua_objlen(_L, -1);
     EXPECT_EQ(len, 5);
 
     // 检查各个元素
     for (int i = 1; i <= 5; ++i) {
-        lua_rawgeti(L_, -1, i);
+        lua_rawgeti(_L, -1, i);
         EXPECT_TRUE(is_number());
         EXPECT_EQ(get_integer(), i);
-        lua_pop(L_, 1);
+        lua_pop(_L, 1);
     }
 
     // 弹出 table
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 TEST_F(JsonAdapterTest, MixedTypeArray_ConvertsCorrectly) {
@@ -223,38 +223,38 @@ TEST_F(JsonAdapterTest, MixedTypeArray_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查第一个元素 (整数)
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     EXPECT_TRUE(is_number());
     EXPECT_EQ(get_integer(), 1);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
     // 检查第二个元素 (字符串)
-    lua_rawgeti(L_, -1, 2);
+    lua_rawgeti(_L, -1, 2);
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "two");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
     // 检查第三个元素 (浮点数)
-    lua_rawgeti(L_, -1, 3);
+    lua_rawgeti(_L, -1, 3);
     EXPECT_TRUE(is_number());
     EXPECT_DOUBLE_EQ(get_number(), 3.0);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
     // 检查第四个元素 (布尔)
-    lua_rawgeti(L_, -1, 4);
+    lua_rawgeti(_L, -1, 4);
     EXPECT_TRUE(is_boolean());
     EXPECT_TRUE(get_boolean());
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
     // 检查第五个元素 (null)
-    lua_rawgeti(L_, -1, 5);
+    lua_rawgeti(_L, -1, 5);
     EXPECT_TRUE(is_nil());
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 TEST_F(JsonAdapterTest, NestedArray_ConvertsCorrectly) {
@@ -262,33 +262,33 @@ TEST_F(JsonAdapterTest, NestedArray_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查第一个子数组
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     ASSERT_TRUE(is_table());
 
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     EXPECT_EQ(get_integer(), 1);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 2);
+    lua_rawgeti(_L, -1, 2);
     EXPECT_EQ(get_integer(), 2);
-    lua_pop(L_, 2);  // 弹出子数组和元素
+    lua_pop(_L, 2);  // 弹出子数组和元素
 
     // 检查第三个子数组
-    lua_rawgeti(L_, -1, 3);
+    lua_rawgeti(_L, -1, 3);
     ASSERT_TRUE(is_table());
 
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     EXPECT_EQ(get_integer(), 5);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 2);
+    lua_rawgeti(_L, -1, 2);
     EXPECT_EQ(get_integer(), 6);
-    lua_pop(L_, 2);
+    lua_pop(_L, 2);
 }
 
 TEST_F(JsonAdapterTest, LargeArray_ConvertsCorrectly) {
@@ -300,26 +300,26 @@ TEST_F(JsonAdapterTest, LargeArray_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查数组长度 - lua_objlen returns length, doesn't push to stack
-    size_t len = lua_objlen(L_, -1);
+    size_t len = lua_objlen(_L, -1);
     EXPECT_EQ(len, 1000);
 
     // 抽查几个元素
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     EXPECT_EQ(get_integer(), 0);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 500);
+    lua_rawgeti(_L, -1, 500);
     EXPECT_EQ(get_integer(), 499);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 1000);
+    lua_rawgeti(_L, -1, 1000);
     EXPECT_EQ(get_integer(), 999);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 // ============================================================================
@@ -331,7 +331,7 @@ TEST_F(JsonAdapterTest, EmptyObject_ConvertsToEmptyTable) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 }
@@ -345,27 +345,27 @@ TEST_F(JsonAdapterTest, SimpleObject_ConvertsToLuaTable) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查 name 字段
-    lua_getfield(L_, -1, "name");
+    lua_getfield(_L, -1, "name");
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "Alice");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
     // 检查 age 字段
-    lua_getfield(L_, -1, "age");
+    lua_getfield(_L, -1, "age");
     EXPECT_TRUE(is_number());
     EXPECT_EQ(get_integer(), 30);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
     // 检查 active 字段
-    lua_getfield(L_, -1, "active");
+    lua_getfield(_L, -1, "active");
     EXPECT_TRUE(is_boolean());
     EXPECT_TRUE(get_boolean());
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 TEST_F(JsonAdapterTest, NestedObject_ConvertsCorrectly) {
@@ -379,26 +379,26 @@ TEST_F(JsonAdapterTest, NestedObject_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查嵌套的 user 对象
-    lua_getfield(L_, -1, "user");
+    lua_getfield(_L, -1, "user");
     ASSERT_TRUE(is_table());
 
-    lua_getfield(L_, -1, "name");
+    lua_getfield(_L, -1, "name");
     EXPECT_EQ(get_string(), "Bob");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_getfield(L_, -1, "age");
+    lua_getfield(_L, -1, "age");
     EXPECT_EQ(get_integer(), 25);
-    lua_pop(L_, 2);  // 弹出 user 对象和 age
+    lua_pop(_L, 2);  // 弹出 user 对象和 age
 
     // 检查 status 字段
-    lua_getfield(L_, -1, "status");
+    lua_getfield(_L, -1, "status");
     EXPECT_EQ(get_string(), "active");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 TEST_F(JsonAdapterTest, ObjectWithArrayField_ConvertsCorrectly) {
@@ -409,28 +409,28 @@ TEST_F(JsonAdapterTest, ObjectWithArrayField_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查 items 数组
-    lua_getfield(L_, -1, "items");
+    lua_getfield(_L, -1, "items");
     ASSERT_TRUE(is_table());
 
     // 检查数组长度 - lua_objlen returns length, doesn't push to stack
-    size_t len = lua_objlen(L_, -1);
+    size_t len = lua_objlen(_L, -1);
     EXPECT_EQ(len, 3);
 
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     EXPECT_EQ(get_integer(), 1);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_pop(L_, 1);  // 弹出 items
+    lua_pop(_L, 1);  // 弹出 items
 
     // 检查 count 字段
-    lua_getfield(L_, -1, "count");
+    lua_getfield(_L, -1, "count");
     EXPECT_EQ(get_integer(), 3);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 TEST_F(JsonAdapterTest, ArrayOfObjects_ConvertsCorrectly) {
@@ -442,33 +442,33 @@ TEST_F(JsonAdapterTest, ArrayOfObjects_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查第一个对象
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     ASSERT_TRUE(is_table());
 
-    lua_getfield(L_, -1, "id");
+    lua_getfield(_L, -1, "id");
     EXPECT_EQ(get_integer(), 1);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_getfield(L_, -1, "name");
+    lua_getfield(_L, -1, "name");
     EXPECT_EQ(get_string(), "Item 1");
-    lua_pop(L_, 2);
+    lua_pop(_L, 2);
 
     // 检查第三个对象
-    lua_rawgeti(L_, -1, 3);
+    lua_rawgeti(_L, -1, 3);
     ASSERT_TRUE(is_table());
 
-    lua_getfield(L_, -1, "id");
+    lua_getfield(_L, -1, "id");
     EXPECT_EQ(get_integer(), 3);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_getfield(L_, -1, "name");
+    lua_getfield(_L, -1, "name");
     EXPECT_EQ(get_string(), "Item 3");
-    lua_pop(L_, 2);
+    lua_pop(_L, 2);
 }
 
 TEST_F(JsonAdapterTest, ComplexNestedStructure_ConvertsCorrectly) {
@@ -485,40 +485,40 @@ TEST_F(JsonAdapterTest, ComplexNestedStructure_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查 users 数组
-    lua_getfield(L_, -1, "users");
+    lua_getfield(_L, -1, "users");
     ASSERT_TRUE(is_table());
 
     // 第一个用户
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     ASSERT_TRUE(is_table());
 
-    lua_getfield(L_, -1, "name");
+    lua_getfield(_L, -1, "name");
     EXPECT_EQ(get_string(), "Alice");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_getfield(L_, -1, "scores");
+    lua_getfield(_L, -1, "scores");
     ASSERT_TRUE(is_table());
 
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     EXPECT_EQ(get_integer(), 95);
-    lua_pop(L_, 4);
+    lua_pop(_L, 4);
 
     // 检查 metadata
-    lua_getfield(L_, -1, "metadata");
+    lua_getfield(_L, -1, "metadata");
     ASSERT_TRUE(is_table());
 
-    lua_getfield(L_, -1, "version");
+    lua_getfield(_L, -1, "version");
     EXPECT_EQ(get_string(), "1.0");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_getfield(L_, -1, "active");
+    lua_getfield(_L, -1, "active");
     EXPECT_TRUE(get_boolean());
-    lua_pop(L_, 2);
+    lua_pop(_L, 2);
 }
 
 TEST_F(JsonAdapterTest, ObjectKeyWithSpecialChars_ConvertsCorrectly) {
@@ -530,24 +530,24 @@ TEST_F(JsonAdapterTest, ObjectKeyWithSpecialChars_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 检查带空格的键
-    lua_getfield(L_, -1, "key with spaces");
+    lua_getfield(_L, -1, "key with spaces");
     EXPECT_EQ(get_string(), "value1");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
     // 检查带制表符的键
-    lua_getfield(L_, -1, "key\twith\ttabs");
+    lua_getfield(_L, -1, "key\twith\ttabs");
     EXPECT_EQ(get_string(), "value2");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
     // 检查带换行符的键
-    lua_getfield(L_, -1, "key\nwith\nnewlines");
+    lua_getfield(_L, -1, "key\nwith\nnewlines");
     EXPECT_EQ(get_string(), "value3");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 TEST_F(JsonAdapterTest, ObjectKeyWithNullChar_ConvertsCorrectly) {
@@ -556,16 +556,16 @@ TEST_F(JsonAdapterTest, ObjectKeyWithNullChar_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 使用 lua_pushlstring 获取键
-    lua_pushlstring(L_, key_with_null.data(), key_with_null.size());
-    lua_gettable(L_, -2);
+    lua_pushlstring(_L, key_with_null.data(), key_with_null.size());
+    lua_gettable(_L, -2);
 
     EXPECT_EQ(get_string(), "value");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 // ============================================================================
@@ -605,7 +605,7 @@ TEST_F(JsonAdapterTest, VeryLargeNumber_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_number());
     EXPECT_EQ(get_integer(), 9007199254740991);
@@ -616,7 +616,7 @@ TEST_F(JsonAdapterTest, VerySmallNumber_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_number());
     EXPECT_EQ(get_integer(), -9007199254740991);
@@ -628,7 +628,7 @@ TEST_F(JsonAdapterTest, VeryLongString_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), long_string);
@@ -648,30 +648,30 @@ TEST_F(JsonAdapterTest, DeeplyNestedStructure_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error)) << "Failed to push nested JSON to Lua: " << error;
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error)) << "Failed to push nested JSON to Lua: " << error;
 
     EXPECT_TRUE(is_table());
 
     // 记录初始栈位置
-    int initial_stack = lua_gettop(L_);
+    int initial_stack = lua_gettop(_L);
 
     // 验证嵌套结构：前 (depth-1) 层都是table
     for (int i = 0; i < depth - 1; ++i) {
-        lua_getfield(L_, -1, "nested");
-        ASSERT_TRUE(is_table()) << "Failed at depth " << (i + 1) << ", stack top: " << lua_gettop(L_);
+        lua_getfield(_L, -1, "nested");
+        ASSERT_TRUE(is_table()) << "Failed at depth " << (i + 1) << ", stack top: " << lua_gettop(_L);
     }
 
     // 最后一次获取 nested 应该得到数字 1
-    lua_getfield(L_, -1, "nested");
+    lua_getfield(_L, -1, "nested");
     EXPECT_TRUE(is_number());
     EXPECT_EQ(get_integer(), 1);
 
     // 栈上有 1 个初始 table + depth 个元素
-    int final_stack = lua_gettop(L_);
+    int final_stack = lua_gettop(_L);
     EXPECT_EQ(final_stack, initial_stack + depth);
 
     // 清理栈
-    lua_settop(L_, initial_stack);
+    lua_settop(_L, initial_stack);
 }
 
 TEST_F(JsonAdapterTest, WideUnicodeCharacters_ConvertsCorrectly) {
@@ -679,7 +679,7 @@ TEST_F(JsonAdapterTest, WideUnicodeCharacters_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "🌍🌎🌏 🎉🎊🎈 𝔘𝔫𝔦𝔠𝔬𝔡𝔢");
@@ -693,28 +693,28 @@ TEST_F(JsonAdapterTest, StackBalance_AfterSuccessfulPush) {
     json data = {{"key", "value"}, {"array", {1, 2, 3}}};
     JsonAdapter adapter(data);
 
-    int top_before = lua_gettop(L_);
+    int top_before = lua_gettop(_L);
 
     std::string error;
-    adapter.push_to_lua(L_, &error);
+    adapter.push_to_lua(_L, &error);
 
-    int top_after = lua_gettop(L_);
+    int top_after = lua_gettop(_L);
 
     EXPECT_EQ(top_after, top_before + 1);  // 应该只压入一个 table
 
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 TEST_F(JsonAdapterTest, StackBalance_AfterFailedPush) {
     json data = {{"key", "value"}, {"array", {1, 2, 3}}};
     JsonAdapter adapter(data);
 
-    int top_before = lua_gettop(L_);
+    int top_before = lua_gettop(_L);
 
     std::string error;
     adapter.push_to_lua(nullptr, &error);
 
-    int top_after = lua_gettop(L_);
+    int top_after = lua_gettop(_L);
 
     EXPECT_EQ(top_after, top_before);  // 失败时不应该改变栈
 }
@@ -796,9 +796,9 @@ TEST_F(JsonAdapterTest, ObjectWithInvalidValue_FailsCleanly) {
     JsonAdapter adapter(valid_data);
 
     std::string error;
-    EXPECT_TRUE(adapter.push_to_lua(L_, &error));
+    EXPECT_TRUE(adapter.push_to_lua(_L, &error));
 
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 }
 
 TEST_F(JsonAdapterTest, PushToLua_CatchesStandardExceptions) {
@@ -807,7 +807,7 @@ TEST_F(JsonAdapterTest, PushToLua_CatchesStandardExceptions) {
     ExceptionThrowingDataAdapter adapter(string_data);
 
     std::string error;
-    EXPECT_FALSE(adapter.push_to_lua(L_, &error));
+    EXPECT_FALSE(adapter.push_to_lua(_L, &error));
 
     EXPECT_FALSE(error.empty());
     EXPECT_TRUE(error.find("JSON conversion error") != std::string::npos);
@@ -818,7 +818,7 @@ TEST_F(JsonAdapterTest, PushToLua_ExceptionWithoutErrorMsg_DoesNotCrash) {
     ExceptionThrowingDataAdapter adapter(string_data);
 
     // 不传递 error_msg，不应该崩溃
-    EXPECT_FALSE(adapter.push_to_lua(L_, nullptr));
+    EXPECT_FALSE(adapter.push_to_lua(_L, nullptr));
 }
 
 TEST_F(JsonAdapterTest, GetTypeName_ReturnsCorrectString) {
@@ -843,12 +843,12 @@ TEST_F(JsonAdapterTest, VeryDeeplyNestedArray_HandlesStackCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    bool result = adapter.push_to_lua(L_, &error);
+    bool result = adapter.push_to_lua(_L, &error);
 
     // 应该成功（或者至少不会崩溃）
     if (result) {
         EXPECT_TRUE(is_table());
-        lua_pop(L_, 1);
+        lua_pop(_L, 1);
     } else {
         // 如果失败，应该有合理的错误消息
         EXPECT_FALSE(error.empty());
@@ -867,32 +867,32 @@ TEST_F(JsonAdapterTest, ArrayWithMixedTypes_AllSucceedOrFailCleanly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     // 验证所有元素都正确转换
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     EXPECT_TRUE(is_number());
     EXPECT_EQ(get_integer(), 1);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 2);
+    lua_rawgeti(_L, -1, 2);
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "string");
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 3);
+    lua_rawgeti(_L, -1, 3);
     EXPECT_TRUE(is_boolean());
     EXPECT_TRUE(get_boolean());
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 4);
+    lua_rawgeti(_L, -1, 4);
     EXPECT_TRUE(is_nil());
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 5);
+    lua_rawgeti(_L, -1, 5);
     EXPECT_TRUE(is_number());
     EXPECT_DOUBLE_EQ(get_number(), 3.14);
-    lua_pop(L_, 2);  // 弹出元素和数组
+    lua_pop(_L, 2);  // 弹出元素和数组
 }
 
 TEST_F(JsonAdapterTest, ObjectWithNestedArrayAndObject_AllSucceed) {
@@ -909,22 +909,22 @@ TEST_F(JsonAdapterTest, ObjectWithNestedArrayAndObject_AllSucceed) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     // 验证结构正确
-    lua_getfield(L_, -1, "level1");
+    lua_getfield(_L, -1, "level1");
     ASSERT_TRUE(is_table());
 
-    lua_getfield(L_, -1, "level2");
+    lua_getfield(_L, -1, "level2");
     ASSERT_TRUE(is_table());
 
-    lua_getfield(L_, -1, "array");
+    lua_getfield(_L, -1, "array");
     ASSERT_TRUE(is_table());
 
-    size_t len = lua_objlen(L_, -1);
+    size_t len = lua_objlen(_L, -1);
     EXPECT_EQ(len, 3);
 
-    lua_pop(L_, 4);  // 清理栈
+    lua_pop(_L, 4);  // 清理栈
 }
 
 // 模拟内存分配失败的测试
@@ -937,15 +937,15 @@ TEST_F(JsonAdapterTest, EmptyStringKey_WorksCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
-    lua_pushstring(L_, "");
-    lua_gettable(L_, -2);
+    lua_pushstring(_L, "");
+    lua_gettable(_L, -2);
 
     EXPECT_TRUE(is_string());
     EXPECT_EQ(get_string(), "empty_key_value");
 
-    lua_pop(L_, 2);  // 清理栈
+    lua_pop(_L, 2);  // 清理栈
 }
 
 TEST_F(JsonAdapterTest, VeryLargeObject_ManyKeys_HandlesCorrectly) {
@@ -958,22 +958,22 @@ TEST_F(JsonAdapterTest, VeryLargeObject_ManyKeys_HandlesCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     EXPECT_TRUE(is_table());
 
     // 验证几个键
-    lua_getfield(L_, -1, "key_0");
+    lua_getfield(_L, -1, "key_0");
     EXPECT_EQ(get_integer(), 0);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_getfield(L_, -1, "key_500");
+    lua_getfield(_L, -1, "key_500");
     EXPECT_EQ(get_integer(), 500);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_getfield(L_, -1, "key_999");
+    lua_getfield(_L, -1, "key_999");
     EXPECT_EQ(get_integer(), 999);
-    lua_pop(L_, 2);
+    lua_pop(_L, 2);
 }
 
 TEST_F(JsonAdapterTest, ArrayWithHoles_ConvertsCorrectly) {
@@ -985,20 +985,20 @@ TEST_F(JsonAdapterTest, ArrayWithHoles_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     // Lua 数组从 1 开始，所以索引映射为 1, 2, 3
-    lua_rawgeti(L_, -1, 1);
+    lua_rawgeti(_L, -1, 1);
     EXPECT_EQ(get_integer(), 1);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 2);
+    lua_rawgeti(_L, -1, 2);
     EXPECT_EQ(get_integer(), 2);
-    lua_pop(L_, 1);
+    lua_pop(_L, 1);
 
-    lua_rawgeti(L_, -1, 3);
+    lua_rawgeti(_L, -1, 3);
     EXPECT_EQ(get_integer(), 3);
-    lua_pop(L_, 2);
+    lua_pop(_L, 2);
 }
 
 // ============================================================================
@@ -1074,16 +1074,16 @@ TEST_F(JsonAdapterTest, ShallowNesting_ConvertsCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     // 验证根对象被转换
     EXPECT_TRUE(is_table());
 
     // 简单验证：检查根对象有 level_10 键
-    lua_pushstring(L_, "level_10");
-    lua_rawget(L_, -2);
+    lua_pushstring(_L, "level_10");
+    lua_rawget(_L, -2);
     EXPECT_TRUE(is_table()) << "level_10 should be a table";
-    lua_pop(L_, 2); // 清理
+    lua_pop(_L, 2); // 清理
 }
 
 TEST_F(JsonAdapterTest, DepthExceedsLimit_BecomesNil) {
@@ -1094,7 +1094,7 @@ TEST_F(JsonAdapterTest, DepthExceedsLimit_BecomesNil) {
     JsonAdapter adapter(data, 256);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     // 栈顶应该是 table
     EXPECT_TRUE(is_table());
@@ -1102,11 +1102,11 @@ TEST_F(JsonAdapterTest, DepthExceedsLimit_BecomesNil) {
     // 检查超过深度的部分
     // 当 current_depth + 1 >= max_depth (256) 时子元素被截断
     // 即 level_44 (深度 255) 的子元素 level_43 会被截断
-    lua_pushstring(L_, "level_300");
-    lua_rawget(L_, -2);
+    lua_pushstring(_L, "level_300");
+    lua_rawget(_L, -2);
 
     // 递归检查直到找到被截断的位置
-    lua_State* L = L_;
+    lua_State* L = _L;
     int depth = 1;
     bool found_nil = false;
 
@@ -1143,36 +1143,36 @@ TEST_F(JsonAdapterTest, CustomMaxNestingDepth_TruncatesDeeplyNestedValues) {
     JsonAdapter adapter(data, 10);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     // 栈顶应该是 table
     EXPECT_TRUE(is_table());
 
     // 直接检查：遍历深度，找到第一个被截断的位置
-    lua_pushstring(L_, "level_50");
-    lua_rawget(L_, -2);
+    lua_pushstring(_L, "level_50");
+    lua_rawget(_L, -2);
 
     int depth = 0;
     bool found_truncation = false;
 
     // 最多遍历15层
-    while (depth < 15 && lua_istable(L_, -1)) {
+    while (depth < 15 && lua_istable(_L, -1)) {
         depth++;
         std::string next_key = "level_" + std::to_string(50 - depth);
-        lua_pushstring(L_, next_key.c_str());
-        lua_rawget(L_, -2);
+        lua_pushstring(_L, next_key.c_str());
+        lua_rawget(_L, -2);
 
-        if (lua_isnil(L_, -1)) {
+        if (lua_isnil(_L, -1)) {
             found_truncation = true;
-            lua_pop(L_, 3); // 清理
+            lua_pop(_L, 3); // 清理
             break;
         }
 
-        lua_remove(L_, -2);
+        lua_remove(_L, -2);
     }
 
     if (!found_truncation) {
-        lua_pop(L_, 2);
+        lua_pop(_L, 2);
     }
 
     // 应该在深度10左右找到截断
@@ -1191,7 +1191,7 @@ TEST_F(JsonAdapterTest, MinMaxNestingDepth_RootObjectStillConverted) {
     JsonAdapter adapter(data, 0);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     // 栈顶应该是 table (根对象，深度 0)
     EXPECT_TRUE(is_table());
@@ -1199,12 +1199,12 @@ TEST_F(JsonAdapterTest, MinMaxNestingDepth_RootObjectStillConverted) {
     // level_5 应该存在但值为 nil
     // 因为当处理 level_5 的值时，current_depth=0，检查 current_depth + 1 >= 1 为真
     // 所以 level_5 的嵌套值会被截断为 nil
-    lua_pushstring(L_, "level_5");
-    lua_rawget(L_, -2);
+    lua_pushstring(_L, "level_5");
+    lua_rawget(_L, -2);
 
     EXPECT_TRUE(is_nil()) << "Child elements should be nil when max_depth is 1";
 
-    lua_pop(L_, 2); // 清理栈
+    lua_pop(_L, 2); // 清理栈
 }
 
 TEST_F(JsonAdapterTest, DeepArrayNesting_TruncatesCorrectly) {
@@ -1221,7 +1221,7 @@ TEST_F(JsonAdapterTest, DeepArrayNesting_TruncatesCorrectly) {
     JsonAdapter adapter(data);
 
     std::string error;
-    ASSERT_TRUE(adapter.push_to_lua(L_, &error));
+    ASSERT_TRUE(adapter.push_to_lua(_L, &error));
 
     // 栈顶应该是 table（数组）
     EXPECT_TRUE(is_table());
@@ -1229,5 +1229,5 @@ TEST_F(JsonAdapterTest, DeepArrayNesting_TruncatesCorrectly) {
     // 数组应该被成功转换（不会崩溃）
     // 超过最大深度的部分会被截断为 nil
 
-    lua_pop(L_, 1); // 清理栈
+    lua_pop(_L, 1); // 清理栈
 }

@@ -13,11 +13,11 @@ class TempFile {
 public:
     // 创建临时文件并写入内容
     TempFile(const std::string& content, const std::string& suffix)
-        : path_(create_temp_file(content, suffix)) {}
+        : _path(create_temp_file(content, suffix)) {}
 
     ~TempFile() {
-        if (!path_.empty()) {
-            std::remove(path_.c_str());
+        if (!_path.empty()) {
+            std::remove(_path.c_str());
         }
     }
 
@@ -28,8 +28,8 @@ public:
     TempFile& operator=(TempFile&&) = delete;
 
     // 获取文件路径
-    const std::string& path() const { return path_; }
-    const char* c_str() const { return path_.c_str(); }
+    const std::string& path() const { return _path; }
+    const char* c_str() const { return _path.c_str(); }
 
 private:
     static std::string create_temp_file(const std::string& content, const std::string& suffix) {
@@ -55,37 +55,37 @@ private:
         return template_name;
     }
 
-    std::string path_;
+    std::string _path;
 };
 
 // 在测试数据目录创建文件
 class TestDataFile {
 public:
     TestDataFile(const std::string& filename, const std::string& content)
-        : path_("test_data/" + filename) {
+        : _path("test_data/" + filename) {
         // 确保目录存在
-        std::size_t pos = path_.find_last_of('/');
+        std::size_t pos = _path.find_last_of('/');
         if (pos != std::string::npos) {
-            std::string dir = path_.substr(0, pos);
+            std::string dir = _path.substr(0, pos);
             std::string mkdir_cmd = "mkdir -p " + dir;
             system(mkdir_cmd.c_str());
         }
 
         // 写入文件
-        std::ofstream file(path_);
+        std::ofstream file(_path);
         file << content;
     }
 
     ~TestDataFile() {
         // 可选：清理测试文件
-        // std::remove(path_.c_str());
+        // std::remove(_path.c_str());
     }
 
-    const std::string& path() const { return path_; }
-    const char* c_str() const { return path_.c_str(); }
+    const std::string& path() const { return _path; }
+    const char* c_str() const { return _path.c_str(); }
 
 private:
-    std::string path_;
+    std::string _path;
 };
 
 // Lua 代码辅助函数

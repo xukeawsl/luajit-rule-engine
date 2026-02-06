@@ -15,69 +15,10 @@
 - **JIT 控制**: 支持运行时动态启用/禁用/刷新 JIT 编译器
 - **最小权限**: 默认只加载必要的 Lua 标准库（base、table、string、math、jit），不开放 io/os/debug 等危险接口
 - **零依赖（除 LuaJIT）**: 只依赖 LuaJIT 和 nlohmann/json（header-only）
-- **完善的测试**: 包含 378 个单元测试，覆盖所有核心功能和错误场景
+- **完善的测试**: 包含上百个单元测试，覆盖所有核心功能和错误场景
 - **性能测试套件**: 45+ benchmark 测试用例，详细对比 LuaJIT vs Native 性能
 - **引擎克隆**: 支持规则引擎克隆，可复制规则、Lua 文件、C++ 函数等
 - **多线程支持**: 提供 RuleEngineWrapper 包装器，支持多线程安全访问和热更新
-
-## 编码规范
-
-- 私有成员变量使用 `_` 前缀（例如 `_lua_state`）
-- 注释使用中文
-- 头文件使用 `.h` 后缀
-- 实现文件使用 `.cpp` 后缀
-- 不使用异常，使用返回值和错误参数处理错误
-
-## 目录结构
-
-```
-luajit-rule-engine/
-├── include/ljre/                  # 公共头文件
-│   ├── lua_state.h                # Lua 状态管理
-│   ├── data_adapter.h             # 数据适配器接口
-│   ├── basic_data_adapter.h       # 基础数据适配器（支持字段修改）
-│   ├── json_adapter.h             # JSON 适配器
-│   ├── rule_engine.h              # 规则引擎核心
-│   └── rule_engine_wrapper.h      # 多线程包装器
-├── src/                           # 实现文件
-│   ├── lua_state.cpp
-│   ├── data_adapter.cpp
-│   ├── basic_data_adapter.cpp     # 基础数据适配器实现
-│   ├── json_adapter.cpp
-│   └── rule_engine.cpp
-├── benchmarks/                    # 性能测试
-│   ├── include/                   # Benchmark 头文件
-│   ├── src/                       # Benchmark 源文件
-│   │   ├── benchmarks/            # 测试用例
-│   │   └── rules/                 # Lua 规则文件
-│   ├── generate_report.py         # 报告生成脚本
-│   └── README.md                  # Benchmark 使用文档
-├── examples/                      # 示例代码
-│   ├── example.cpp                # 使用示例
-│   ├── rule_config.lua            # 规则配置文件
-│   └── rules/                     # 规则文件目录
-│       ├── age_check.lua
-│       ├── email_validation.lua
-│       └── user_info_complete.lua
-├── tests/                         # 单元测试
-│   ├── test_helpers.h             # 测试辅助工具
-│   ├── lua_state_test.cpp
-│   ├── lua_stack_guard_test.cpp
-│   ├── data_adapter_test.cpp
-│   ├── rule_engine_test.cpp
-│   ├── rule_engine_wrapper_test.cpp
-│   └── integration_test.cpp
-├── docs/                          # 文档
-│   ├── ULTRA_COMPLEX_ANALYSIS.md  # 性能分析
-│   └── COVERAGE_QUICKSTART.md     # 覆盖率快速指南
-├── third-party/                   # 第三方库
-│   └── json/                      # nlohmann/json
-├── cmake/                         # CMake 配置
-├── ARCHITECTURE.md                # 架构文档
-├── README.md                      # 本文档
-├── TESTING.md                     # 测试文档
-└── CHANGELOG.md                   # 变更日志
-```
 
 ## 依赖
 
@@ -88,8 +29,8 @@ luajit-rule-engine/
 - **C++ 编译器**: 支持 C++17（GCC 7+）
 
 ### 测试依赖
-- **GoogleTest**: 用于单元测试（CMake 会自动下载）
-- **Google Benchmark**: 用于性能测试（CMake 会自动下载）
+- **GoogleTest**: 用于单元测试
+- **Google Benchmark**: 用于性能测试
 
 ### 可选依赖
 - **Python 3**: 用于生成性能测试报告
@@ -127,266 +68,35 @@ make -j$(nproc)
 
 详细的测试指南请参阅 [TESTING.md](TESTING.md)。
 
-### 编译测试
+### 快速运行测试
 
 ```bash
+# 编译并运行所有测试
 mkdir build && cd build
 cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3
 make -j$(nproc)
-```
-
-测试可执行文件会生成在 `build/tests/` 目录下。
-
-### 运行所有测试
-
-```bash
-# 使用 CTest 运行所有测试
-cd build
 ctest --output-on-failure
-
-# 或者查看详细输出
-ctest --verbose
-
-# 运行特定测试
-ctest -R lua_state_test
-ctest -R data_adapter_test
 ```
 
-### 直接运行单个测试可执行文件
+### 查看测试覆盖率
 
 ```bash
-cd build
-
-# 运行所有测试并显示简要结果
-./tests/lua_state_test --gtest_brief=yes
-
-# 运行特定测试用例
-./tests/lua_state_test --gtest_filter="LuaStateTest.LoadFile*"
-
-# 运行测试并显示详细输出
-./tests/lua_state_test --gtest_print_time=1
-```
-
-### 测试覆盖率
-
-项目支持使用 GCC/Clang 的 gcov/lcov 生成代码覆盖率报告。
-
-#### 1. 编译带覆盖率信息的版本
-
-```bash
-mkdir build && cd build
-cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3 -DBUILD_COVERAGE=ON
+# 编译带覆盖率信息的版本
+cmake .. -DBUILD_COVERAGE=ON
 make -j$(nproc)
-```
-
-#### 2. 运行测试
-
-```bash
-# 运行所有测试以生成覆盖率数据
 ctest
-```
 
-#### 3. 生成覆盖率报告
-
-```bash
-# 方法1: 使用 lcov 生成 HTML 报告（推荐）
+# 生成覆盖率报告
 lcov --capture --directory . --output-file coverage.info
-lcov --remove coverage.info '/usr/*' --output-file coverage.info
-lcov --remove coverage.info 'third-party/*' --output-file coverage.info
-lcov --remove coverage.info 'tests/*' --output-file coverage.info
+lcov --remove coverage.info '/usr/*' 'third-party/*' 'tests/*' --output-file coverage.info
 genhtml coverage.info --output-directory coverage_html
 
-# 在浏览器中打开报告
-# firefox coverage_html/index.html  (Linux)
-# open coverage_html/index.html     (macOS)
+# 在浏览器中查看（Python HTTP 服务器）
+cd coverage_html && python3 -m http.server 8000
+# 然后访问: http://localhost:8000
 ```
 
-> 💡 **快捷方式**: 使用提供的脚本查看覆盖率
-> ```bash
-> # 生成并查看覆盖率（Ubuntu/Debian）
-> ./view_coverage.sh
-> ```
-
-#### 4. 查看覆盖率摘要
-
-```bash
-lcov --summary coverage.info
-```
-
-示例输出：
-```
-Summary coverage rate:
-  lines......: 90.4% (1945 of 2152 lines)
-  functions..: 90.5% (813 of 898 functions)
-  branches...: no data found
-```
-
-#### 5. 在浏览器中查看详细报告
-
-**使用 Python HTTP 服务器（推荐）**
-
-```bash
-# 方法1: 使用快捷脚本（默认端口 8000）
-./view_coverage.sh
-
-# 方法2: 指定自定义端口
-./view_coverage.sh 9000
-
-# 方法3: 手动启动
-cd build/coverage_html
-python3 -m http.server 8000
-# 然后在浏览器中访问: http://localhost:8000
-```
-
-服务器启动后，在浏览器中访问显示的地址即可查看覆盖率报告。按 `Ctrl+C` 停止服务器。
-
-### 测试结构
-
-测试文件位于 `tests/` 目录，按模块组织：
-
-```
-tests/
-├── test_helpers.h              # 测试辅助工具和测试数据
-├── CMakeLists.txt              # 测试构建配置
-├── lua_state_test.cpp          # LuaState 类测试（52个测试用例）
-│   ├── 构造和析构测试
-│   ├── 文件加载测试
-│   ├── Buffer 加载测试
-│   ├── 错误处理测试（包括栈顶非字符串场景）
-│   ├── 栈操作测试
-│   ├── 安全性测试
-│   ├── 边界条件测试
-│   └── JIT 控制测试（enable/disable/flush）
-├── lua_stack_guard_test.cpp    # LuaStackGuard 类测试（17个测试用例）
-│   ├── 基本栈恢复测试
-│   ├── 多次 push/pop 测试
-│   ├── 嵌套守卫测试
-│   ├── Release 机制测试
-│   ├── 空栈测试
-│   ├── 函数调用场景测试
-│   ├── 表迭代场景测试
-│   └── 错误处理场景测试
-├── data_adapter_test.cpp       # 数据适配器测试（55个测试用例）
-│   ├── 基本类型转换测试
-│   ├── 数组转换测试
-│   ├── 对象转换测试
-│   ├── 嵌套结构测试
-│   ├── 特殊字符处理
-│   ├── 错误处理测试（包括异常捕获）
-│   ├── 边界条件测试
-│   ├── 栈平衡测试
-│   └── 深度嵌套限制测试（9个测试用例）
-├── rule_engine_wrapper_test.cpp # 规则引擎包装器测试（15个测试用例）
-│   ├── 基础功能测试（4个）
-│   ├── shared_ptr 安全性测试（2个）
-│   ├── 热更新测试（2个）
-│   ├── 线程本地存储测试（2个）
-│   ├── 并发压力测试（2个）
-│   ├── 边界情况测试（2个）
-│   └── 性能测试（1个）
-├── rule_engine_test.cpp        # 规则引擎测试（186个测试用例）
-│   ├── 规则加载和卸载测试
-│   ├── 规则匹配测试（单个和批量）
-│   ├── 规则热更新测试
-│   ├── 配置文件加载测试
-│   ├── 错误场景测试
-│   ├── Lua 状态无效测试
-│   ├── call_match_function 错误路径测试
-│   ├── JIT 控制测试（11个测试用例）
-│   │   ├── enable_jit/disable_jit/flush_jit 功能测试
-│   │   ├── JIT 状态切换测试
-│   │   ├── JIT 性能影响测试
-│   │   └── 无效 Lua 状态下的 JIT 控制测试
-│   ├── match_all_rules 边界情况测试（7个测试用例）
-│   │   ├── push_to_lua 失败场景测试
-│   │   ├── 函数表不存在场景测试
-│   │   ├── 函数不存在场景测试
-│   │   ├── 第一个返回值不是布尔值场景测试
-│   │   ├── 第二个返回值不是字符串场景测试
-│   │   ├── 混合错误场景测试
-│   │   └── 只有错误场景测试
-│   ├── match_rule (vector版本) 测试（6个测试用例）
-│   │   ├── 所有规则都存在且通过
-│   │   ├── 部分规则不存在
-│   │   ├── 所有规则都不存在
-│   │   ├── 空规则列表
-│   │   ├── 混合存在和不存在的规则
-│   │   └── 只请求不存在的规则
-│   ├── 函数注册测试（30个测试用例）
-│   │   ├── 普通 C++ 函数注册测试
-│   │   ├── 类成员函数注册测试
-│   │   ├── 函数管理测试（注销、清空、查询）
-│   │   ├── 函数在规则中使用测试
-│   │   ├── 多函数协同测试
-│   │   └── 无效状态下的函数操作测试（6个）
-│   ├── C++ 异常处理测试（7个测试用例）
-│   │   ├── C++ 函数抛出异常测试（使用 pcall）
-│   │   ├── C++ 函数抛出异常测试（不使用 pcall）
-│   │   ├── 安全异常捕获测试（3个场景）
-│   │   ├── 类成员函数异常处理测试
-│   │   ├── 异常处理最佳实践测试
-│   │   ├── 直接调用测试（不使用 pcall）
-│   │   └── 多函数异常处理测试
-│   ├── Clone 功能测试（43个测试用例）
-│   │   ├── 基本克隆测试（NONE, RULES, LUA_FILES, CPP_FUNCTIONS, CPP_MEMBER_FUNCTIONS, ALL）
-│   │   ├── 便捷方法测试（clone_rules, clone_lua_files, clone_cpp_functions, clone_safe）
-│   │   ├── 组合选项测试
-│   │   ├── 错误处理测试
-│   │   ├── 独立性测试
-│   │   ├── 多次克隆测试
-│   │   ├── 边界情况测试
-│   │   ├── 复杂场景测试
-│   │   └── 功能验证测试
-│   └── 深度限制集成测试（4个测试用例）
-└── integration_test.cpp        # 集成测试（15个测试用例）
-    ├── 端到端工作流测试
-    ├── 多规则协同测试
-    └── 深度嵌套数据安全访问测试
-```
-
-**测试统计**：
-- lua_state_test: 52 个测试用例
-- lua_stack_guard_test: 17 个测试用例
-- data_adapter_test: 55 个测试用例（+9 深度限制测试）
-- rule_engine_wrapper_test: 15 个测试用例（NEW）
-- rule_engine_test: 186 个测试用例（+11 JIT 控制测试、+7 边界情况测试、+6 多规则版本测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试、+43 Clone 功能测试）
-- integration_test: 15 个测试用例（+4 深度限制集成测试）
-- **总计**: 378 个测试用例，100% 通过
-
-### 测试覆盖率目标
-
-- **总体目标**: ≥85% 代码覆盖率
-- **核心模块**: ≥90% 代码覆盖率
-  - `LuaState`: 核心状态管理
-  - `LuaStackGuard`: 栈安全管理
-  - `JsonAdapter`: 数据转换
-  - `RuleEngine`: 规则引擎核心逻辑
-
-### 持续集成
-
-在提交代码前，请确保：
-
-1. **所有测试通过**
-   ```bash
-   cd build && ctest
-   ```
-
-2. **代码覆盖率符合要求**
-   ```bash
-   # 生成覆盖率报告
-   lcov --summary coverage.info
-   ```
-
-3. **无内存泄漏**
-   ```bash
-   # 使用 valgrind 检查
-   valgrind --leak-check=full ./tests/lua_state_test
-   ```
-
-4. **符合编码规范**
-   - 私有成员变量使用 `_` 前缀
-   - 注释使用中文
-   - 不使用异常
+详细的测试说明、测试结构、覆盖率目标等信息请查看 [TESTING.md](TESTING.md)。
 
 ## 运行示例
 
@@ -463,21 +173,6 @@ mkdir build && cd build
 cmake .. -DLUAJIT_ROOT=/usr/local/3rd/luajit-2.1.0-beta3 -DCMAKE_INSTALL_PREFIX=/usr/local/3rd/ljre-1.0.0
 make -j$(nproc)
 sudo make install
-```
-
-安装后的文件结构：
-```
-/usr/local/3rd/ljre-1.0.0/
-├── include/ljre/              # 头文件
-│   ├── lua_state.h
-│   ├── data_adapter.h
-│   ├── json_adapter.h
-│   └── rule_engine.h
-└── lib/
-    ├── libljre.a              # 静态库
-    └── cmake/ljre/            # CMake 配置文件
-        ├── ljre-config.cmake
-        └── ljre_targets.cmake
 ```
 
 #### 使用已安装的库
@@ -769,17 +464,17 @@ bool reload_rule(const std::string& rule_name, std::string* error_msg = nullptr)
 #### 匹配单个规则
 ```cpp
 bool match_rule(const std::string& rule_name,
-                const DataAdapter& data_adapter,
+                std::shared_ptr<DataAdapter> data_adapter,
                 MatchResult& result,
-                std::string* error_msg = nullptr);
+                std::string* error_msg = nullptr) const;
 ```
 
 #### 匹配多个指定规则
 ```cpp
 bool match_rule(const std::vector<std::string>& rule_names,
-                const DataAdapter& data_adapter,
+                std::shared_ptr<DataAdapter> data_adapter,
                 std::map<std::string, MatchResult>& results,
-                std::string* error_msg = nullptr);
+                std::string* error_msg = nullptr) const;
 ```
 返回的 `results` 是一个 `std::map`，键为规则名，值为匹配结果，按规则名字母顺序排序。
 
@@ -794,9 +489,9 @@ bool match_rule(const std::vector<std::string>& rule_names,
 
 #### 匹配所有规则
 ```cpp
-bool match_all_rules(const DataAdapter& data_adapter,
+bool match_all_rules(std::shared_ptr<DataAdapter> data_adapter,
                      std::map<std::string, MatchResult>& results,
-                     std::string* error_msg = nullptr);
+                     std::string* error_msg = nullptr) const;
 ```
 返回的 `results` 是一个 `std::map`，键为规则名，值为匹配结果，按规则名字母顺序排序。
 
@@ -1221,7 +916,7 @@ end
 
 **结果**：
 - ✅ 程序不会崩溃
-- ❌ `match_rule()` 返回 `false`（调用失败）
+- ✅ `match_rule()` 返回 `false`（调用失败，但这是正常的错误处理）
 - ✅ `result.matched = false`（标记为匹配失败）
 - ✅ `result.message = "Failed to call match: C++ exception"`（包含错误信息）
 - ✅ `error` 参数也包含相同的错误信息
@@ -1393,14 +1088,6 @@ int safe_function(lua_State* L) {
    - 只有当类型精确为字符串时才会被使用
 4. 规则名称必须唯一，重复添加会失败
 5. 规则文件路径可以是相对路径或绝对路径
-
-## 许可证
-
-MIT License
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
 
 ## 性能测试
 

@@ -23,6 +23,23 @@ LuaJIT Rule Engine 是一个基于 C++17 和 LuaJIT-2.1.0-beta3 的高性能规�
 
 ---
 
+## 1.3 编码规范
+
+本项目遵循以下编码规范，以确保代码的一致性和可维护性：
+
+- **私有成员变量**：使用 `_` 前缀（例如 `_lua_state`）
+- **注释**：使用中文编写注释和文档
+- **文件命名**：
+  - 头文件使用 `.h` 后缀
+  - 实现文件使用 `.cpp` 后缀
+- **错误处理**：不使用异常，使用返回值和错误参数处理错误
+- **代码风格**：
+  - 使用 RAII 管理资源
+  - 优先使用 `const` 和 `constexpr`
+  - 使用智能指针管理动态内存
+
+---
+
 ## 2. 系统架构
 
 ### 2.1 分层架构图
@@ -178,8 +195,7 @@ LuaJIT Rule Engine 是一个基于 C++17 和 LuaJIT-2.1.0-beta3 的高性能规�
 **关键设计决策**：
 
 1. **禁止拷贝**：使用 `= delete` 禁止拷贝构造和赋值，确保唯一性
-2. **Lua 函数缓存**：将 Lua 函数引用存储在 Lua Registry 中，避免重复查找
-3. **错误传播**：通过可选的 `error_msg` 参数传递详细错误信息
+2. **错误传播**：通过可选的 `error_msg` 参数传递详细错误信息
 
 **C++ 函数注册机制**：
 
@@ -305,7 +321,7 @@ end
 
 **结果**：
 - ✅ 程序不会崩溃
-- ❌ `match_rule()` 返回 `false`
+- ✅ `match_rule()` 返回 `false`
 - ✅ `result.matched = false`
 - ✅ `result.message = "Failed to call match: C++ exception"`
 - ✅ `error` 参数也包含错误信息
@@ -565,6 +581,8 @@ auto full_clone = engine.clone_safe();
 禁止拷贝和移动:
 - RuleEngineWrapper(const RuleEngineWrapper&) = delete
 - RuleEngineWrapper& operator=(const RuleEngineWrapper&) = delete
+- RuleEngineWrapper(RuleEngineWrapper&&) = delete;
+- RuleEngineWrapper& operator=(RuleEngineWrapper&&) = delete;
 ```
 
 **线程本地存储结构**：
@@ -1647,7 +1665,7 @@ luajit-rule-engine
 └─────────────────────────────────────────────────────────┘
 
               ┌────────────────┐
-              │  E2E Tests     │  15 个测试用例
+              │  E2E Tests     │  数十个测试用例
               │ (集成测试)      │  < 10%
               └────────────────┘
           ┌──────────────────────┐
@@ -1655,12 +1673,11 @@ luajit-rule-engine
           │  (多组件协同测试)     │
           └──────────────────────┘
       ┌──────────────────────────────────┐
-      │     Unit Tests (单元测试)         │  325 个测试用例
-      │  - LuaState: 52                  │  > 90%
-      │  - LuaStackGuard: 17             │
-      │  - DataAdapter/JsonAdapter: 55   │
-      │  - RuleEngine: 186               │
-      │  - RuleEngineWrapper: 15         │  (NEW)
+      │     Unit Tests (单元测试)         │  上百个测试用例
+      │  - RuleEngine: 数百个             │  > 90%
+      │  - DataAdapter/JsonAdapter: 数十个│
+      │  - Integration: 数十个            │
+      │  - 其他组件测试                   │
       └──────────────────────────────────┘
 
 测试工具:
@@ -1674,15 +1691,12 @@ luajit-rule-engine
 ```
 模块                 测试用例数    覆盖率目标
 ────────────────────────────────────────
-LuaState                 52         ≥90%
-LuaStackGuard            17         ≥90%
-DataAdapter              36         ≥90%
-JsonAdapter              55         ≥90%  (+9 深度限制测试)
-RuleEngine              186         ≥90%  (+11 JIT 控制测试、+30 函数注册测试、+7 C++ 异常处理测试、+9 Lua 公共函数加载测试、+43 Clone 功能测试)
-RuleEngineWrapper        15         ≥90%  (NEW)
-Integration              15         ≥80%  (+4 深度限制测试)
+RuleEngine              数百个      ≥90%
+JsonAdapter              数十个     ≥90%
+Integration              数十个     ≥80%
+其他组件                  数十个     ≥90%
 ────────────────────────────────────────
-总计                     340        ≥85%
+总计                     上百个     ≥85%
 ```
 
 ---
@@ -1763,7 +1777,6 @@ LuaJIT Rule Engine 是一个设计精良、实现规范的高性能规则引擎�
 2. **动态配置**：支持规则热更新，无需重启服务
 3. **安全可靠**：沙箱环境 + 栈守卫，确保运行安全
 4. **易于扩展**：适配器模式支持多种数据格式；支持 C++ 函数注册扩展功能；支持 Lua 公共函数加载；支持引擎克隆
-5. **高测试覆盖**：325 个测试用例，覆盖率 ≥85%
 
 ### 14.2 架构特点
 
@@ -1789,34 +1802,51 @@ LuaJIT Rule Engine 是一个设计精良、实现规范的高性能规则引擎�
 
 ```
 luajit-rule-engine/
-├── include/ljre/              # 公共头文件
-│   ├── rule_engine.h          # 规则引擎核心接口
-│   ├── lua_state.h            # Lua 状态管理
-│   ├── data_adapter.h         # 数据适配器接口
-│   └── json_adapter.h         # JSON 适配器实现
-│
-├── src/                       # 实现文件
-│   ├── rule_engine.cpp
+├── include/ljre/                  # 公共头文件
+│   ├── lua_state.h                # Lua 状态管理
+│   ├── data_adapter.h             # 数据适配器接口
+│   ├── basic_data_adapter.h       # 基础数据适配器（支持字段修改）
+│   ├── json_adapter.h             # JSON 适配器
+│   ├── rule_engine.h              # 规则引擎核心
+│   └── rule_engine_wrapper.h      # 多线程包装器
+├── src/                           # 实现文件
 │   ├── lua_state.cpp
-│   └── json_adapter.cpp
-│
-├── examples/                  # 示例代码
-│   ├── example.cpp
-│   ├── rule_config.lua
-│   └── rules/
-│
-├── tests/                     # 测试代码
-│   ├── test_helpers.h
+│   ├── data_adapter.cpp
+│   ├── basic_data_adapter.cpp     # 基础数据适配器实现
+│   ├── json_adapter.cpp
+│   └── rule_engine.cpp
+├── benchmarks/                    # 性能测试
+│   ├── include/                   # Benchmark 头文件
+│   ├── src/                       # Benchmark 源文件
+│   │   ├── benchmarks/            # 测试用例
+│   │   └── rules/                 # Lua 规则文件
+│   ├── generate_report.py         # 报告生成脚本
+│   └── README.md                  # Benchmark 使用文档
+├── examples/                      # 示例代码
+│   ├── example.cpp                # 使用示例
+│   ├── rule_config.lua            # 规则配置文件
+│   └── rules/                     # 规则文件目录
+│       ├── age_check.lua
+│       ├── email_validation.lua
+│       └── user_info_complete.lua
+├── tests/                         # 单元测试
+│   ├── test_helpers.h             # 测试辅助工具
 │   ├── lua_state_test.cpp
 │   ├── lua_stack_guard_test.cpp
 │   ├── data_adapter_test.cpp
 │   ├── rule_engine_test.cpp
+│   ├── rule_engine_wrapper_test.cpp
 │   └── integration_test.cpp
-│
-├── third-party/               # 第三方库
-│   └── json/
-│
-└── cmake/                     # CMake 配置
+├── docs/                          # 文档
+│   ├── ULTRA_COMPLEX_ANALYSIS.md  # 性能分析
+│   └── COVERAGE_QUICKSTART.md     # 覆盖率快速指南
+├── third-party/                   # 第三方库
+│   └── json/                      # nlohmann/json
+├── cmake/                         # CMake 配置
+├── ARCHITECTURE.md                # 架构文档（本文档）
+├── README.md                      # 项目概述和快速开始
+├── TESTING.md                     # 测试文档
+└── CHANGELOG.md                   # 变更日志
 ```
 
 ### B. 相关文档
