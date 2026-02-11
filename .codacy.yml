@@ -1,8 +1,4 @@
 ---
-engines:
-  cppcheck:
-    language: c++
-
 exclude_paths:
   - "benchmarks/**"
   - "cmake/**"
