@@ -1,5 +1,6 @@
 #include "ljre/data_adapter.h"
 
+
 namespace ljre {
 
 // 静态成员初始化
