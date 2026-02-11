@@ -1,6 +1,4 @@
 ---
-exclude_paths:
-  - "**/*.md"
-include_paths:
-  - "include/**"
+files:
   - "src/**"
+  - "include/**"
