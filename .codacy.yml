@@ -1,6 +1,6 @@
 ---
 exclude_paths:
-  - "**/**"
+  - "**/*"
 include_paths:
   - "include/**"
   - "src/**"
