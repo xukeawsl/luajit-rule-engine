@@ -1,6 +1,9 @@
 ---
 exclude_paths:
-  - "**"
-include_paths:
-  - "src/**"
-  - "include/**"
+  - "benchmarks/**"
+  - "cmake/**"
+  - "docs/**"
+  - "exampless/**"
+  - "tests/**"
+  - "third-party/**"
+  - "**.md"
