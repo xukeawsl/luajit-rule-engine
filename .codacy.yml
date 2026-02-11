@@ -1,4 +1,10 @@
 ---
+engines:
+  cppcheck:
+    enabled: true
+    exclude_patterns:
+      - "*Cppcheck does not need standard library headers to get proper results.*"
+
 exclude_paths:
   - "benchmarks/**"
   - "cmake/**"
